@@ -593,7 +593,7 @@ if st.button("✍️ 추천 요청 문장 생성"):
 """
             
             text = f"""현재 포트폴리오 구성은 다음과 같아:
-- 보유 현금: ${cash_input:,.2f}
+- 보유 현금: ${st.session_state.cash_amount:,.2f}
 """
             
             for stock in holdings:
