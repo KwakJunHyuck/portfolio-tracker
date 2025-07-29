@@ -337,6 +337,70 @@ if st.session_state.transactions:
 
 st.markdown("---")
 
+# 포트폴리오 테이블
+if st.session_state.stocks:
+    st.subheader("📋 현재 포트폴리오")
+    
+    # 현재가 업데이트 버튼
+    if st.button("🔄 현재가 업데이트", use_container_width=True):
+        for stock in st.session_state.stocks:
+            try:
+                ticker = yf.Ticker(stock["종목"])
+                current_price = ticker.history(period="1d")["Close"].iloc[-1]
+                
+                # 배당 수익률 업데이트
+                info = ticker.info
+                dividend_yield = info.get('dividendYield', 0)
+                if dividend_yield:
+                    dividend_yield = dividend_yield * 100
+                else:
+                    dividend_yield = 0
+                
+                stock["현재가"] = round(current_price, 2)
+                stock["배당수익률(%)"] = round(dividend_yield, 2) if dividend_yield else 0
+                profit = (current_price - stock["매수단가"]) * stock["수량"]
+                stock["수익"] = round(profit, 2)
+                stock["수익률(%)"] = round((profit / (stock["매수단가"] * stock["수량"])) * 100, 2)
+            except:
+                continue
+        st.success("현재가가 업데이트되었습니다!")
+        st.rerun()
+    
+    df = pd.DataFrame(st.session_state.stocks)
+    df["평가금액"] = df["현재가"] * df["수량"]
+    df["투자금액"] = df["매수단가"] * df["수량"]
+    
+    # 색상으로 수익/손실 구분하여 표시
+    st.dataframe(
+        df.style.applymap(
+            lambda x: 'color: red' if isinstance(x, (int, float)) and x < 0 else 'color: green' if isinstance(x, (int, float)) and x > 0 else '',
+            subset=['수익', '수익률(%)']
+        ),
+        use_container_width=True
+    )
+
+    total_profit = df["수익"].sum()
+    total_investment = df["투자금액"].sum()
+    total_value = df["평가금액"].sum()
+    total_return_rate = (total_profit / total_investment * 100) if total_investment > 0 else 0
+    total_dividend = (df["배당수익률(%)"] * df["평가금액"] / 100).sum()
+    
+    if st.session_state.mobile_mode:
+        st.metric("💰 총 투자금액", f"${total_investment:,.2f}")
+        st.metric("📈 총 평가금액", f"${total_value:,.2f}")
+        st.metric("💹 총 수익률", f"{total_return_rate:.2f}%", f"${total_profit:,.2f}")
+        st.metric("💵 연간 예상 배당금", f"${total_dividend:,.2f}")
+    else:
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("💰 총 투자금액", f"${total_investment:,.2f}")
+        with col2:
+            st.metric("📈 총 평가금액", f"${total_value:,.2f}")
+        with col3:
+            st.metric("💹 총 수익률", f"{total_return_rate:.2f}%", f"${total_profit:,.2f}")
+        with col4:
+            st.metric("💵 연간 예상 배당금", f"${total_dividend:,.2f}")
+
 # 📅 포트폴리오 기록 저장 (종목 관리 밑으로 이동)
 st.subheader("📅 포트폴리오 기록 저장")
 
@@ -412,69 +476,6 @@ else:
 
 st.markdown("---")
 
-# 포트폴리오 테이블
-if st.session_state.stocks:
-    st.subheader("📋 현재 포트폴리오")
-    
-    # 현재가 업데이트 버튼
-    if st.button("🔄 현재가 업데이트", use_container_width=True):
-        for stock in st.session_state.stocks:
-            try:
-                ticker = yf.Ticker(stock["종목"])
-                current_price = ticker.history(period="1d")["Close"].iloc[-1]
-                
-                # 배당 수익률 업데이트
-                info = ticker.info
-                dividend_yield = info.get('dividendYield', 0)
-                if dividend_yield:
-                    dividend_yield = dividend_yield * 100
-                else:
-                    dividend_yield = 0
-                
-                stock["현재가"] = round(current_price, 2)
-                stock["배당수익률(%)"] = round(dividend_yield, 2) if dividend_yield else 0
-                profit = (current_price - stock["매수단가"]) * stock["수량"]
-                stock["수익"] = round(profit, 2)
-                stock["수익률(%)"] = round((profit / (stock["매수단가"] * stock["수량"])) * 100, 2)
-            except:
-                continue
-        st.success("현재가가 업데이트되었습니다!")
-        st.rerun()
-    
-    df = pd.DataFrame(st.session_state.stocks)
-    df["평가금액"] = df["현재가"] * df["수량"]
-    df["투자금액"] = df["매수단가"] * df["수량"]
-    
-    # 색상으로 수익/손실 구분하여 표시
-    st.dataframe(
-        df.style.applymap(
-            lambda x: 'color: red' if isinstance(x, (int, float)) and x < 0 else 'color: green' if isinstance(x, (int, float)) and x > 0 else '',
-            subset=['수익', '수익률(%)']
-        ),
-        use_container_width=True
-    )
-
-    total_profit = df["수익"].sum()
-    total_investment = df["투자금액"].sum()
-    total_value = df["평가금액"].sum()
-    total_return_rate = (total_profit / total_investment * 100) if total_investment > 0 else 0
-    total_dividend = (df["배당수익률(%)"] * df["평가금액"] / 100).sum()
-    
-    if st.session_state.mobile_mode:
-        st.metric("💰 총 투자금액", f"${total_investment:,.2f}")
-        st.metric("📈 총 평가금액", f"${total_value:,.2f}")
-        st.metric("💹 총 수익률", f"{total_return_rate:.2f}%", f"${total_profit:,.2f}")
-        st.metric("💵 연간 예상 배당금", f"${total_dividend:,.2f}")
-    else:
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            st.metric("💰 총 투자금액", f"${total_investment:,.2f}")
-        with col2:
-            st.metric("📈 총 평가금액", f"${total_value:,.2f}")
-        with col3:
-            st.metric("💹 총 수익률", f"{total_return_rate:.2f}%", f"${total_profit:,.2f}")
-        with col4:
-            st.metric("💵 연간 예상 배당금", f"${total_dividend:,.2f}")
 
 # 🚨 알림 시스템 (목표 달성/손절/익절)
 if st.session_state.stocks and st.session_state.target_settings:
