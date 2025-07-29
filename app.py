@@ -36,6 +36,68 @@ st.markdown("""
 
 st.title("📈 스마트 포트폴리오 트래커")
 
+# 모바일 모드 토글
+st.session_state.mobile_mode = st.checkbox("📱 모바일 모드", value=st.session_state.mobile_mode)
+
+# 🔄 포트폴리오 불러오기 기능 (최상단 배치)
+st.subheader("🔄 포트폴리오 불러오기")
+
+# 모바일 친화적 레이아웃 설정
+if st.session_state.mobile_mode:
+    col_ratio = [1]
+    chart_height = 300
+    use_full_width = True
+else:
+    col_ratio = [3, 1]
+    chart_height = 400
+    use_full_width = True
+
+if st.session_state.mobile_mode:
+    if os.path.exists(history_file):
+        with open(history_file, "r", encoding="utf-8") as f:
+            history_data = json.load(f)
+        
+        if history_data:
+            available_dates = sorted(history_data.keys(), reverse=True)
+            selected_date = st.selectbox("불러올 날짜 선택", available_dates)
+        else:
+            st.info("저장된 포트폴리오가 없습니다.")
+            selected_date = None
+    else:
+        st.info("저장된 포트폴리오가 없습니다.")
+        selected_date = None
+    
+    if selected_date and st.button("📂 포트폴리오 불러오기", use_container_width=True):
+        loaded_data = history_data[selected_date]
+        st.session_state.stocks = loaded_data["stocks"]
+        st.success(f"{selected_date} 포트폴리오를 불러왔습니다!")
+        st.rerun()
+else:
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        if os.path.exists(history_file):
+            with open(history_file, "r", encoding="utf-8") as f:
+                history_data = json.load(f)
+            
+            if history_data:
+                available_dates = sorted(history_data.keys(), reverse=True)
+                selected_date = st.selectbox("불러올 날짜 선택", available_dates)
+            else:
+                st.info("저장된 포트폴리오가 없습니다.")
+                selected_date = None
+        else:
+            st.info("저장된 포트폴리오가 없습니다.")
+            selected_date = None
+    
+    with col2:
+        if selected_date and st.button("📂 포트폴리오 불러오기"):
+            loaded_data = history_data[selected_date]
+            st.session_state.stocks = loaded_data["stocks"]
+            st.success(f"{selected_date} 포트폴리오를 불러왔습니다!")
+            st.rerun()
+
+st.markdown("---")
+
 # 세션 상태 초기화
 if "stocks" not in st.session_state:
     st.session_state.stocks = []
@@ -98,68 +160,6 @@ def get_market_data():
         }
     except:
         return None
-
-# 모바일 모드 토글
-st.session_state.mobile_mode = st.checkbox("📱 모바일 모드", value=st.session_state.mobile_mode)
-
-# 모바일 친화적 레이아웃 설정
-if st.session_state.mobile_mode:
-    col_ratio = [1]
-    chart_height = 300
-    use_full_width = True
-else:
-    col_ratio = [3, 1]
-    chart_height = 400
-    use_full_width = True
-
-# 🔄 포트폴리오 불러오기 기능
-st.subheader("🔄 포트폴리오 불러오기")
-
-if st.session_state.mobile_mode:
-    if os.path.exists(history_file):
-        with open(history_file, "r", encoding="utf-8") as f:
-            history_data = json.load(f)
-        
-        if history_data:
-            available_dates = sorted(history_data.keys(), reverse=True)
-            selected_date = st.selectbox("불러올 날짜 선택", available_dates)
-        else:
-            st.info("저장된 포트폴리오가 없습니다.")
-            selected_date = None
-    else:
-        st.info("저장된 포트폴리오가 없습니다.")
-        selected_date = None
-    
-    if selected_date and st.button("📂 포트폴리오 불러오기", use_container_width=True):
-        loaded_data = history_data[selected_date]
-        st.session_state.stocks = loaded_data["stocks"]
-        st.success(f"{selected_date} 포트폴리오를 불러왔습니다!")
-        st.rerun()
-else:
-    col1, col2 = st.columns([3, 1])
-    with col1:
-        if os.path.exists(history_file):
-            with open(history_file, "r", encoding="utf-8") as f:
-                history_data = json.load(f)
-            
-            if history_data:
-                available_dates = sorted(history_data.keys(), reverse=True)
-                selected_date = st.selectbox("불러올 날짜 선택", available_dates)
-            else:
-                st.info("저장된 포트폴리오가 없습니다.")
-                selected_date = None
-        else:
-            st.info("저장된 포트폴리오가 없습니다.")
-            selected_date = None
-    
-    with col2:
-        if selected_date and st.button("📂 포트폴리오 불러오기"):
-            loaded_data = history_data[selected_date]
-            st.session_state.stocks = loaded_data["stocks"]
-            st.success(f"{selected_date} 포트폴리오를 불러왔습니다!")
-            st.rerun()
-
-st.markdown("---")
 
 # 📝 종목 추가/수정
 st.subheader("📝 종목 관리")
@@ -600,16 +600,6 @@ if st.button("✍️ 추천 요청 문장 생성"):
                 text += f"- {stock['종목']}: {stock['수량']}주 (매수단가 ${stock['매수단가']}, 현재가 ${stock['현재가']}, 수익률 {stock['수익률(%)']:.2f}%)\n"
             
             text += market_info
-            
-            # 목표 설정 정보 추가
-            if st.session_state.target_settings:
-                text += "\n🎯 현재 설정된 목표:\n"
-                for stock in holdings:
-                    symbol = stock['종목']
-                    target = st.session_state.target_settings.get(f"{symbol}_target", 20)
-                    stop = st.session_state.target_settings.get(f"{symbol}_stop", -10)
-                    take = st.session_state.target_settings.get(f"{symbol}_take", 25)
-                    text += f"- {symbol}: 목표 {target}%, 손절 {stop}%, 익절 {take}%\n"
             
             text += """
 이 포트폴리오와 현금을 바탕으로,
