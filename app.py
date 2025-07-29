@@ -36,6 +36,18 @@ st.markdown("""
 
 st.title("📈 스마트 포트폴리오 트래커")
 
+# 세션 상태 초기화 (mobile_mode 먼저 초기화)
+if "mobile_mode" not in st.session_state:
+    st.session_state.mobile_mode = False
+if "stocks" not in st.session_state:
+    st.session_state.stocks = []
+if "transactions" not in st.session_state:
+    st.session_state.transactions = []
+if "target_settings" not in st.session_state:
+    st.session_state.target_settings = {}
+if "target_allocation" not in st.session_state:
+    st.session_state.target_allocation = {}
+
 # 모바일 모드 토글
 st.session_state.mobile_mode = st.checkbox("📱 모바일 모드", value=st.session_state.mobile_mode)
 
@@ -97,18 +109,6 @@ else:
             st.rerun()
 
 st.markdown("---")
-
-# 세션 상태 초기화
-if "stocks" not in st.session_state:
-    st.session_state.stocks = []
-if "transactions" not in st.session_state:
-    st.session_state.transactions = []
-if "mobile_mode" not in st.session_state:
-    st.session_state.mobile_mode = False
-if "target_settings" not in st.session_state:
-    st.session_state.target_settings = {}
-if "target_allocation" not in st.session_state:
-    st.session_state.target_allocation = {}
 
 # 데이터 폴더 확인
 os.makedirs("data", exist_ok=True)
