@@ -530,7 +530,7 @@ if st.session_state.stocks and st.session_state.target_allocation:
     df = pd.DataFrame(st.session_state.stocks)
     df["평가금액"] = df["현재가"] * df["수량"]
     
-    cash_input = st.number_input("보유 현금 ($)", min_value=0.0, step=100.0, format="%.2f", value=0.0)
+    cash_input = st.session_state.cash_amount
     total_assets = df["평가금액"].sum() + cash_input
     
     if total_assets > 0:
@@ -655,8 +655,8 @@ if st.session_state.stocks:
     # 2️⃣ 총 자산 구성 비율
     st.subheader("💰 총 자산 구성 (현금 + 주식 평가금액)")
     asset_pie = df[["종목", "평가금액"]].copy()
-    if cash_input > 0:
-        asset_pie.loc[len(asset_pie.index)] = ["현금", cash_input]
+    if st.session_state.cash_amount > 0:
+        asset_pie.loc[len(asset_pie.index)] = ["현금", st.session_state.cash_amount]
     
     fig2 = px.pie(asset_pie, names="종목", values="평가금액", title="💼 자산 구성 비율")
     fig2.update_traces(textposition='inside', textinfo='percent+label')
@@ -704,7 +704,7 @@ if st.session_state.mobile_mode:
         if st.session_state.stocks:
             record = {
                 "date": today.strftime("%Y-%m-%d"),
-                "cash": cash_input,
+                "cash": st.session_state.cash_amount,
                 "stocks": st.session_state.stocks
             }
 
@@ -738,7 +738,7 @@ else:
             if st.session_state.stocks:
                 record = {
                     "date": today.strftime("%Y-%m-%d"),
-                    "cash": cash_input,
+                    "cash": st.session_state.cash_amount,
                     "stocks": st.session_state.stocks
                 }
 
