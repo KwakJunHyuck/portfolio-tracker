@@ -34,110 +34,58 @@ st.markdown("""
 
 st.title("📈 스마트 포트폴리오 트래커")
 
-# 세션 상태 초기화
+# 데이터 폴더 확인
+os.makedirs("data", exist_ok=True)
+history_file = "data/portfolio_data.json"
+settings_file = "data/settings.json"
+
+# 자동 데이터 로드 함수
+def load_portfolio_data():
+    if os.path.exists(history_file):
+        with open(history_file, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            return data.get("stocks", []), data.get("cash", 0.0), data.get("transactions", []), data.get("target_settings", {})
+    return [], 0.0, [], {}
+
+# 자동 데이터 저장 함수
+def save_portfolio_data():
+    data = {
+        "stocks": st.session_state.stocks,
+        "cash": st.session_state.cash_amount,
+        "transactions": st.session_state.transactions,
+        "target_settings": st.session_state.target_settings,
+        "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    }
+    with open(history_file, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+
+# 세션 상태 초기화 및 자동 로드
 if "mobile_mode" not in st.session_state:
     st.session_state.mobile_mode = False
-if "stocks" not in st.session_state:
-    st.session_state.stocks = []
-if "transactions" not in st.session_state:
-    st.session_state.transactions = []
-if "target_settings" not in st.session_state:
-    st.session_state.target_settings = {}
-if "target_allocation" not in st.session_state:
-    st.session_state.target_allocation = {}
-if "cash_amount" not in st.session_state:
-    st.session_state.cash_amount = 0.0
+if "initialized" not in st.session_state:
+    # 앱 시작 시 기존 데이터 자동 로드
+    stocks, cash, transactions, target_settings = load_portfolio_data()
+    st.session_state.stocks = stocks
+    st.session_state.cash_amount = cash
+    st.session_state.transactions = transactions
+    st.session_state.target_settings = target_settings
+    st.session_state.initialized = True
 
 # 모바일 모드 토글
 st.session_state.mobile_mode = st.checkbox("📱 모바일 모드", value=st.session_state.mobile_mode)
 
-# 🔄 포트폴리오 불러오기 기능 (최상단 배치)
-st.subheader("🔄 포트폴리오 불러오기")
-
-if st.session_state.mobile_mode:
-    if os.path.exists("data/history.json"):
-        with open("data/history.json", "r", encoding="utf-8") as f:
-            history_data = json.load(f)
-        
-        if history_data:
-            available_dates = sorted(history_data.keys(), reverse=True)
-            selected_date = st.selectbox("불러올 날짜 선택", available_dates)
-        else:
-            st.info("저장된 포트폴리오가 없습니다.")
-            selected_date = None
-    else:
-        st.info("저장된 포트폴리오가 없습니다.")
-        selected_date = None
-    
-    if selected_date and st.button("📂 포트폴리오 불러오기", use_container_width=True):
-        loaded_data = history_data[selected_date]
-        st.session_state.stocks = loaded_data["stocks"]
-        # 현금 정보도 함께 불러오기
-        if "cash" in loaded_data:
-            st.session_state.cash_amount = loaded_data["cash"]
-        st.success(f"{selected_date} 포트폴리오를 불러왔습니다!")
-        st.rerun()
-else:
-    col1, col2 = st.columns([3, 1])
-    with col1:
-        if os.path.exists("data/history.json"):
-            with open("data/history.json", "r", encoding="utf-8") as f:
-                history_data = json.load(f)
-            
-            if history_data:
-                available_dates = sorted(history_data.keys(), reverse=True)
-                selected_date = st.selectbox("불러올 날짜 선택", available_dates)
-            else:
-                st.info("저장된 포트폴리오가 없습니다.")
-                selected_date = None
-        else:
-            st.info("저장된 포트폴리오가 없습니다.")
-            selected_date = None
-    
-    with col2:
-        if selected_date and st.button("📂 포트폴리오 불러오기"):
-            loaded_data = history_data[selected_date]
-            st.session_state.stocks = loaded_data["stocks"]
-            # 현금 정보도 함께 불러오기
-            if "cash" in loaded_data:
-                st.session_state.cash_amount = loaded_data["cash"]
-            st.success(f"{selected_date} 포트폴리오를 불러왔습니다!")
-            st.rerun()
-
-st.markdown("---")
-
 # 💰 보유 현금 입력
 st.subheader("💰 보유 현금")
-cash_input = st.number_input("보유 현금 ($)", min_value=0.0, step=100.0, format="%.2f", value=st.session_state.cash_amount, key="main_cash_input")
-st.session_state.cash_amount = cash_input
+new_cash = st.number_input("보유 현금 ($)", min_value=0.0, step=100.0, format="%.2f", value=st.session_state.cash_amount, key="main_cash_input")
+
+# 현금 변경 시 자동 저장
+if new_cash != st.session_state.cash_amount:
+    st.session_state.cash_amount = new_cash
+    save_portfolio_data()
 
 st.markdown("---")
 
-# 데이터 폴더 확인
-os.makedirs("data", exist_ok=True)
-history_file = "data/history.json"
-transactions_file = "data/transactions.json"
-settings_file = "data/settings.json"
-
-# 설정 불러오기
-def load_settings():
-    if os.path.exists(settings_file):
-        with open(settings_file, "r", encoding="utf-8") as f:
-            settings = json.load(f)
-            st.session_state.target_settings = settings.get("target_settings", {})
-            st.session_state.target_allocation = settings.get("target_allocation", {})
-
-def save_settings():
-    settings = {
-        "target_settings": st.session_state.target_settings,
-        "target_allocation": st.session_state.target_allocation
-    }
-    with open(settings_file, "w", encoding="utf-8") as f:
-        json.dump(settings, f, indent=2, ensure_ascii=False)
-
-load_settings()
-
-# 📝 종목 추가/수정
+# 📝 종목 관리
 st.subheader("📝 종목 관리")
 
 # 탭으로 구분
@@ -161,7 +109,7 @@ with tab1:
             with col3:
                 avg_price = st.number_input("매수단가 ($)", min_value=0.01, step=0.01, format="%.2f")
         
-        submitted = st.form_submit_button("추가하기", use_container_width=True)
+        submitted = st.form_submit_button("매수하기", use_container_width=True)
         
         if submitted and symbol:
             try:
@@ -211,7 +159,7 @@ with tab1:
                     st.success(f"{symbol} 기존 보유분과 합쳐졌습니다!")
                 else:
                     st.session_state.stocks.append(new_stock)
-                    st.success(f"{symbol} 추가 완료!")
+                    st.success(f"{symbol} 매수 완료!")
                 
                 # 매매 기록 추가
                 transaction = {
@@ -224,11 +172,15 @@ with tab1:
                 }
                 st.session_state.transactions.append(transaction)
                 
+                # 자동 저장
+                save_portfolio_data()
+                st.rerun()
+                
             except Exception as e:
                 st.error(f"현재가를 불러오는 데 실패했습니다: {e}")
 
 with tab2:
-    st.subheader("💰 매수/매도 기록")
+    st.subheader("💰 매도 기록")
     
     # 매도 기능
     if st.session_state.stocks:
@@ -286,8 +238,13 @@ with tab2:
                     "총액": sell_quantity * sell_price
                 }
                 st.session_state.transactions.append(transaction)
+                
+                # 자동 저장
+                save_portfolio_data()
                 st.success(f"{sell_symbol} {sell_quantity}주 매도 완료!")
                 st.rerun()
+    else:
+        st.info("보유 종목이 없습니다.")
 
 with tab3:
     st.subheader("⚙️ 목표 설정")
@@ -295,6 +252,7 @@ with tab3:
     # 목표 수익률 설정
     st.write("**🎯 종목별 목표 설정**")
     if st.session_state.stocks:
+        settings_changed = False
         for stock in st.session_state.stocks:
             symbol = stock["종목"]
             col1, col2, col3 = st.columns(3)
@@ -305,7 +263,9 @@ with tab3:
                     value=st.session_state.target_settings.get(f"{symbol}_target", 20.0),
                     key=f"target_{symbol}"
                 )
-                st.session_state.target_settings[f"{symbol}_target"] = target_return
+                if st.session_state.target_settings.get(f"{symbol}_target") != target_return:
+                    st.session_state.target_settings[f"{symbol}_target"] = target_return
+                    settings_changed = True
             
             with col2:
                 stop_loss = st.number_input(
@@ -314,7 +274,9 @@ with tab3:
                     max_value=0.0,
                     key=f"stop_{symbol}"
                 )
-                st.session_state.target_settings[f"{symbol}_stop"] = stop_loss
+                if st.session_state.target_settings.get(f"{symbol}_stop") != stop_loss:
+                    st.session_state.target_settings[f"{symbol}_stop"] = stop_loss
+                    settings_changed = True
             
             with col3:
                 take_profit = st.number_input(
@@ -323,14 +285,19 @@ with tab3:
                     min_value=0.0,
                     key=f"take_{symbol}"
                 )
-                st.session_state.target_settings[f"{symbol}_take"] = take_profit
-    
-    if st.button("💾 설정 저장", use_container_width=True):
-        save_settings()
-        st.success("설정이 저장되었습니다!")
+                if st.session_state.target_settings.get(f"{symbol}_take") != take_profit:
+                    st.session_state.target_settings[f"{symbol}_take"] = take_profit
+                    settings_changed = True
+        
+        # 설정 변경 시 자동 저장
+        if settings_changed:
+            save_portfolio_data()
+    else:
+        st.info("보유 종목이 없습니다.")
 
 # 거래 내역 표시
 if st.session_state.transactions:
+    st.markdown("---")
     st.subheader("📋 최근 거래 내역")
     df_transactions = pd.DataFrame(st.session_state.transactions[-10:])  # 최근 10건만
     st.dataframe(df_transactions, use_container_width=True)
@@ -363,6 +330,9 @@ if st.session_state.stocks:
                 stock["수익률(%)"] = round((profit / (stock["매수단가"] * stock["수량"])) * 100, 2)
             except:
                 continue
+        
+        # 업데이트 후 자동 저장
+        save_portfolio_data()
         st.success("현재가가 업데이트되었습니다!")
         st.rerun()
     
@@ -384,14 +354,16 @@ if st.session_state.stocks:
     total_value = df["평가금액"].sum()
     total_return_rate = (total_profit / total_investment * 100) if total_investment > 0 else 0
     total_dividend = (df["배당수익률(%)"] * df["평가금액"] / 100).sum()
+    total_assets = total_value + st.session_state.cash_amount
     
     if st.session_state.mobile_mode:
         st.metric("💰 총 투자금액", f"${total_investment:,.2f}")
         st.metric("📈 총 평가금액", f"${total_value:,.2f}")
         st.metric("💹 총 수익률", f"{total_return_rate:.2f}%", f"${total_profit:,.2f}")
         st.metric("💵 연간 예상 배당금", f"${total_dividend:,.2f}")
+        st.metric("🏦 총 자산", f"${total_assets:,.2f}")
     else:
-        col1, col2, col3, col4 = st.columns(4)
+        col1, col2, col3, col4, col5 = st.columns(5)
         with col1:
             st.metric("💰 총 투자금액", f"${total_investment:,.2f}")
         with col2:
@@ -400,82 +372,8 @@ if st.session_state.stocks:
             st.metric("💹 총 수익률", f"{total_return_rate:.2f}%", f"${total_profit:,.2f}")
         with col4:
             st.metric("💵 연간 예상 배당금", f"${total_dividend:,.2f}")
-
-# 📅 포트폴리오 기록 저장 (종목 관리 밑으로 이동)
-st.subheader("📅 포트폴리오 기록 저장")
-
-today = st.date_input("📌 저장할 날짜 선택", value=date.today())
-
-if st.session_state.mobile_mode:
-    if st.button("💾 포트폴리오 저장", use_container_width=True):
-        if st.session_state.stocks:
-            record = {
-                "date": today.strftime("%Y-%m-%d"),
-                "cash": st.session_state.cash_amount,
-                "stocks": st.session_state.stocks
-            }
-
-            # 기존 데이터 로드
-            if os.path.exists(history_file):
-                with open(history_file, "r", encoding="utf-8") as f:
-                    history_data = json.load(f)
-            else:
-                history_data = {}
-
-            # 저장
-            history_data[record["date"]] = record
-            with open(history_file, "w", encoding="utf-8") as f:
-                json.dump(history_data, f, indent=2, ensure_ascii=False)
-
-            st.success(f"{record['date']} 기록이 저장되었습니다.")
-        else:
-            st.warning("먼저 종목을 입력해주세요.")
-    
-    if st.button("💾 거래내역 저장", use_container_width=True):
-        if st.session_state.transactions:
-            with open(transactions_file, "w", encoding="utf-8") as f:
-                json.dump(st.session_state.transactions, f, indent=2, ensure_ascii=False)
-            st.success("거래내역이 저장되었습니다.")
-        else:
-            st.warning("저장할 거래내역이 없습니다.")
-else:
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("💾 포트폴리오 저장"):
-            if st.session_state.stocks:
-                record = {
-                    "date": today.strftime("%Y-%m-%d"),
-                    "cash": st.session_state.cash_amount,
-                    "stocks": st.session_state.stocks
-                }
-
-                # 기존 데이터 로드
-                if os.path.exists(history_file):
-                    with open(history_file, "r", encoding="utf-8") as f:
-                        history_data = json.load(f)
-                else:
-                    history_data = {}
-
-                # 저장
-                history_data[record["date"]] = record
-                with open(history_file, "w", encoding="utf-8") as f:
-                    json.dump(history_data, f, indent=2, ensure_ascii=False)
-
-                st.success(f"{record['date']} 기록이 저장되었습니다.")
-            else:
-                st.warning("먼저 종목을 입력해주세요.")
-
-    with col2:
-        if st.button("💾 거래내역 저장"):
-            if st.session_state.transactions:
-                with open(transactions_file, "w", encoding="utf-8") as f:
-                    json.dump(st.session_state.transactions, f, indent=2, ensure_ascii=False)
-                st.success("거래내역이 저장되었습니다.")
-            else:
-                st.warning("저장할 거래내역이 없습니다.")
-
-st.markdown("---")
-
+        with col5:
+            st.metric("🏦 총 자산", f"${total_assets:,.2f}")
 
 # 🚨 알림 시스템 (목표 달성/손절/익절)
 if st.session_state.stocks and st.session_state.target_settings:
@@ -592,7 +490,7 @@ if st.session_state.stocks:
         st.success("✅ 포트폴리오 상태가 양호합니다!")
 
 st.markdown("---")
-st.subheader("📥 데이터 다운로드")
+st.subheader("📥 데이터 백업")
 
 if st.session_state.mobile_mode:
     if st.session_state.stocks:
@@ -603,43 +501,32 @@ if st.session_state.mobile_mode:
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
             df.to_excel(writer, index=False, sheet_name="포트폴리오")
+            if st.session_state.transactions:
+                df_trans = pd.DataFrame(st.session_state.transactions)
+                df_trans.to_excel(writer, index=False, sheet_name="거래내역")
 
         st.download_button(
-            label="📥 포트폴리오 엑셀 다운로드",
+            label="📥 전체 데이터 엑셀 다운로드",
             data=buffer.getvalue(),
-            file_name=f"portfolio_{date.today()}.xlsx",
+            file_name=f"portfolio_backup_{date.today()}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             use_container_width=True
         )
     
-    if st.session_state.transactions:
-        df_trans = pd.DataFrame(st.session_state.transactions)
-        
-        buffer = io.BytesIO()
-        with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
-            df_trans.to_excel(writer, index=False, sheet_name="거래내역")
-
-        st.download_button(
-            label="📥 거래내역 엑셀 다운로드",
-            data=buffer.getvalue(),
-            file_name=f"transactions_{date.today()}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            use_container_width=True
-        )
-    
+    # JSON 백업
     if os.path.exists(history_file):
         with open(history_file, "r", encoding="utf-8") as f:
-            history_json = f.read()
+            json_data = f.read()
         
         st.download_button(
-            label="📥 전체 히스토리 다운로드",
-            data=history_json.encode('utf-8'),
-            file_name=f"portfolio_history_{date.today()}.json",
+            label="📥 JSON 백업 다운로드",
+            data=json_data.encode('utf-8'),
+            file_name=f"portfolio_backup_{date.today()}.json",
             mime="application/json",
             use_container_width=True
         )
 else:
-    col1, col2, col3 = st.columns(3)
+    col1, col2 = st.columns(2)
 
     with col1:
         if st.session_state.stocks:
@@ -650,38 +537,26 @@ else:
             buffer = io.BytesIO()
             with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
                 df.to_excel(writer, index=False, sheet_name="포트폴리오")
+                if st.session_state.transactions:
+                    df_trans = pd.DataFrame(st.session_state.transactions)
+                    df_trans.to_excel(writer, index=False, sheet_name="거래내역")
 
             st.download_button(
-                label="📥 포트폴리오 엑셀 다운로드",
+                label="📥 전체 데이터 엑셀 다운로드",
                 data=buffer.getvalue(),
-                file_name=f"portfolio_{date.today()}.xlsx",
+                file_name=f"portfolio_backup_{date.today()}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
 
     with col2:
-        if st.session_state.transactions:
-            df_trans = pd.DataFrame(st.session_state.transactions)
-            
-            buffer = io.BytesIO()
-            with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
-                df_trans.to_excel(writer, index=False, sheet_name="거래내역")
-
-            st.download_button(
-                label="📥 거래내역 엑셀 다운로드",
-                data=buffer.getvalue(),
-                file_name=f"transactions_{date.today()}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
-
-    with col3:
         if os.path.exists(history_file):
             with open(history_file, "r", encoding="utf-8") as f:
-                history_json = f.read()
+                json_data = f.read()
             
             st.download_button(
-                label="📥 전체 히스토리 다운로드",
-                data=history_json.encode('utf-8'),
-                file_name=f"portfolio_history_{date.today()}.json",
+                label="📥 JSON 백업 다운로드",
+                data=json_data.encode('utf-8'),
+                file_name=f"portfolio_backup_{date.today()}.json",
                 mime="application/json"
             )
 
@@ -690,28 +565,36 @@ st.markdown("---")
 with st.expander("ℹ️ 앱 정보 및 사용법"):
     st.markdown("""
     ### 🚀 주요 기능
-    - **포트폴리오 관리**: 종목 추가/수정/삭제, 매수/매도 기록
-    - **실시간 데이터**: 현재가 자동 조회 및 수익률 계산
-    - **데이터 저장**: 일별 포트폴리오 히스토리 관리
-    - **AI 추천**: GPT용 포트폴리오 분석 문장 자동 생성
+    - **자동 누적 기록**: 매수/매도/현금 변경 시 자동 저장
+    - **실시간 포트폴리오**: 현재가 업데이트 및 수익률 계산
+    - **거래 내역 관리**: 모든 매수/매도 기록 자동 추적
     - **목표 관리**: 종목별 목표수익률, 손절선, 익절선 설정
+    - **스마트 알림**: 목표 달성, 손절선 도달, 포트폴리오 위험 알림
+    - **AI 추천**: GPT용 포트폴리오 분석 문장 자동 생성
     - **배당 추적**: 종목별 배당 수익률 및 예상 배당금 계산
     - **모바일 지원**: 스마트폰에서도 편리하게 사용 가능
     
     ### 💡 사용 팁
-    - 매일 포트폴리오를 저장하여 수익률 추이를 확인하세요
+    - 앱을 시작하면 기존 데이터가 자동으로 로드됩니다
+    - 매수/매도/현금 변경 시 자동으로 저장되므로 별도 저장 불필요
     - 현재가 업데이트 버튼으로 최신 데이터를 반영하세요
-    - 거래내역을 꾸준히 기록하여 투자 패턴을 분석하세요
     - 목표 설정을 통해 체계적인 투자 계획을 수립하세요
-    - 모바일 모드를 활용하여 언제 어디서나 포트폴리오를 확인하세요
+    - 정기적으로 데이터 백업을 받아두세요
     
-    ### 🔧 구현된 핵심 기능
-    - ✅ 포트폴리오 불러오기 기능
-    - ✅ 매수/매도 기록 기능  
-    - ✅ 실시간 현재가 업데이트
-    - ✅ 포트폴리오 분석 및 알림 기능
+    ### 🔧 핵심 기능
+    - ✅ 자동 데이터 로드 및 저장
+    - ✅ 실시간 매수/매도 기록
+    - ✅ 현재가 업데이트 및 수익률 계산
     - ✅ 목표 수익률/손절선/익절선 설정
+    - ✅ 스마트 알림 시스템
     - ✅ 배당금 추적 기능
-    - ✅ 모바일 친화적 반응형 디자인
     - ✅ 보유 현금 관리
+    - ✅ 포트폴리오 분석 및 경고
+    - ✅ 모바일 친화적 디자인
+    - ✅ 데이터 백업 기능
+    
+    ### 📝 데이터 구조
+    - 모든 데이터는 `data/portfolio_data.json`에 자동 저장
+    - 포트폴리오, 현금, 거래내역, 목표설정이 하나의 파일에 통합 관리
+    - 실시간 자동 저장으로 데이터 손실 방지
     """)
