@@ -36,7 +36,7 @@ st.markdown("""
 
 st.title("📈 스마트 포트폴리오 트래커")
 
-# 세션 상태 초기화 (mobile_mode 먼저 초기화)
+# 세션 상태 초기화
 if "mobile_mode" not in st.session_state:
     st.session_state.mobile_mode = False
 if "stocks" not in st.session_state:
@@ -47,6 +47,8 @@ if "target_settings" not in st.session_state:
     st.session_state.target_settings = {}
 if "target_allocation" not in st.session_state:
     st.session_state.target_allocation = {}
+if "cash_amount" not in st.session_state:
+    st.session_state.cash_amount = 0.0
 
 # 모바일 모드 토글
 st.session_state.mobile_mode = st.checkbox("📱 모바일 모드", value=st.session_state.mobile_mode)
@@ -82,6 +84,9 @@ if st.session_state.mobile_mode:
     if selected_date and st.button("📂 포트폴리오 불러오기", use_container_width=True):
         loaded_data = history_data[selected_date]
         st.session_state.stocks = loaded_data["stocks"]
+        # 현금 정보도 함께 불러오기
+        if "cash" in loaded_data:
+            st.session_state.cash_amount = loaded_data["cash"]
         st.success(f"{selected_date} 포트폴리오를 불러왔습니다!")
         st.rerun()
 else:
@@ -105,8 +110,18 @@ else:
         if selected_date and st.button("📂 포트폴리오 불러오기"):
             loaded_data = history_data[selected_date]
             st.session_state.stocks = loaded_data["stocks"]
+            # 현금 정보도 함께 불러오기
+            if "cash" in loaded_data:
+                st.session_state.cash_amount = loaded_data["cash"]
             st.success(f"{selected_date} 포트폴리오를 불러왔습니다!")
             st.rerun()
+
+st.markdown("---")
+
+# 💰 보유 현금 입력
+st.subheader("💰 보유 현금")
+cash_input = st.number_input("보유 현금 ($)", min_value=0.0, step=100.0, format="%.2f", value=st.session_state.cash_amount, key="main_cash_input")
+st.session_state.cash_amount = cash_input
 
 st.markdown("---")
 
@@ -530,8 +545,7 @@ if st.session_state.stocks and st.session_state.target_allocation:
     df = pd.DataFrame(st.session_state.stocks)
     df["평가금액"] = df["현재가"] * df["수량"]
     
-    cash_input = st.session_state.cash_amount
-    total_assets = df["평가금액"].sum() + cash_input
+    total_assets = df["평가금액"].sum() + st.session_state.cash_amount
     
     if total_assets > 0:
         rebalancing_suggestions = []
@@ -554,12 +568,12 @@ if st.session_state.stocks and st.session_state.target_allocation:
                     rebalancing_suggestions.append(f"📉 **{symbol}** {abs(diff_shares):.0f}주 매도 (${abs(diff_value):,.0f})")
         
         # 현금 비중 체크
-        current_cash_weight = (cash_input / total_assets) * 100
+        current_cash_weight = (st.session_state.cash_amount / total_assets) * 100
         target_cash_weight = st.session_state.target_allocation.get("현금", 20)
         
         if abs(current_cash_weight - target_cash_weight) > 5:
             target_cash_value = total_assets * target_cash_weight / 100
-            diff_cash = target_cash_value - cash_input
+            diff_cash = target_cash_value - st.session_state.cash_amount
             
             if diff_cash > 0:
                 rebalancing_suggestions.append(f"💵 현금 비중 증대 필요: ${diff_cash:,.0f}")
@@ -1072,4 +1086,5 @@ with st.expander("ℹ️ 앱 정보 및 사용법"):
     - ✅ 리밸런싱 제안 시스템
     - ✅ 시장 지수 대비 성과 분석
     - ✅ 모바일 친화적 반응형 디자인
+    - ✅ 보유 현금 관리 및 자산 구성 분석
     """)
