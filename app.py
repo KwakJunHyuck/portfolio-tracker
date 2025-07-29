@@ -65,8 +65,8 @@ else:
     use_full_width = True
 
 if st.session_state.mobile_mode:
-    if os.path.exists(history_file):
-        with open(history_file, "r", encoding="utf-8") as f:
+    if os.path.exists("data/history.json"):
+        with open("data/history.json", "r", encoding="utf-8") as f:
             history_data = json.load(f)
         
         if history_data:
@@ -87,8 +87,8 @@ if st.session_state.mobile_mode:
 else:
     col1, col2 = st.columns([3, 1])
     with col1:
-        if os.path.exists(history_file):
-            with open(history_file, "r", encoding="utf-8") as f:
+        if os.path.exists("data/history.json"):
+            with open("data/history.json", "r", encoding="utf-8") as f:
                 history_data = json.load(f)
             
             if history_data:
