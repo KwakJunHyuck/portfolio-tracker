@@ -78,6 +78,50 @@ st.markdown("""
 
 st.title("📈 스마트 포트폴리오 트래커")
 
+# 서비스 계정 키 경로
+SERVICE_ACCOUNT_FILE = "data/service_account.json"
+BACKUP_FILENAME = "portfolio_data.json"
+
+# Google Drive 백업/복원 버튼 UI
+st.subheader("☁️ Google Drive 연동")
+
+col1, col2 = st.columns(2)
+with col1:
+# 구글 드라이브 백업 버튼
+    if st.button("📤 Google Drive에 백업"):
+        try:
+            service = get_drive_service()
+            folder_id = get_folder_id(service, "포트폴리오_백업")
+            if not folder_id:
+                st.warning("❗ 구글 드라이브에 '포트폴리오_백업' 폴더가 없습니다. 먼저 생성해주세요.")
+            else:
+                if os.path.exists(f"data/{BACKUP_FILENAME}"):
+                    upload_file(service, folder_id, f"data/{BACKUP_FILENAME}", BACKUP_FILENAME)
+                    st.success("✅ Google Drive에 백업 완료!")
+                else:
+                    st.error("❌ 로컬에 portfolio_data.json 파일이 존재하지 않습니다.")
+        except Exception as e:
+            st.error(f"⚠️ Google Drive 백업 중 오류: {e}")
+        pass
+        
+with col2:
+    # 구글 드라이브 복원 버튼
+    if st.button("📥 Google Drive에서 복원"):
+        try:
+            service = get_drive_service()
+            folder_id = get_folder_id(service, "포트폴리오_백업")
+            if not folder_id:
+                st.warning("❗ '포트폴리오_백업' 폴더를 먼저 Google Drive에 생성해주세요.")
+            else:
+                success = download_file(service, folder_id, BACKUP_FILENAME, f"data/{BACKUP_FILENAME}")
+                if success:
+                    st.success("✅ Google Drive에서 복원 완료!")
+                else:
+                    st.error(f"❌ Google Drive에서 {BACKUP_FILENAME} 파일을 찾을 수 없습니다.")
+        except Exception as e:
+            st.error(f"⚠️ Google Drive 복원 중 오류: {e}")
+        pass
+
 # 한국 시간대 설정
 KST = pytz.timezone('Asia/Seoul')
 COMMISSION_RATE = 0.0025  # 0.25% 수수료
