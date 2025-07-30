@@ -1159,15 +1159,14 @@ st.markdown("---")
 if 'recommendation_text_global' not in st.session_state:
     st.session_state.recommendation_text_global = ""
 
-# 복사 기능을 위한 HTML과 JavaScript
+# 복사 기능을 위한 HTML과 JavaScript (중복 표시 방지)
 def create_copy_button_with_text(text_content, button_text="📋 클립보드에 복사"):
-    """텍스트와 함께 복사 버튼 생성"""
+    """텍스트와 함께 복사 버튼 생성 (중복 표시 방지)"""
     # 텍스트를 안전하게 처리 (따옴표, 백틱 등 이스케이프)
-    safe_text = text_content.replace('\\', '\\\\').replace('"', '\\"').replace("'", "\\'").replace('`', '\\`')
+    safe_text = text_content.replace('\\', '\\\\').replace('"', '\\"').replace("'", "\\'").replace('`', '\\`').replace('\n', '\\n').replace('\r', '\\r')
     
     return f"""
     <div style="margin: 15px 0;">
-        <textarea id="hiddenTextArea" style="position: absolute; left: -9999px; opacity: 0;">{text_content}</textarea>
         <button id="copyButton" style="
             background: linear-gradient(90deg, #4CAF50, #45a049);
             color: white;
@@ -1188,7 +1187,7 @@ def create_copy_button_with_text(text_content, button_text="📋 클립보드에
     
     <script>
         function copyToClipboard() {{
-            const text = `{safe_text}`;
+            const text = "{safe_text}";
             
             // 방법 1: Clipboard API 사용
             if (navigator.clipboard && window.isSecureContext) {{
@@ -1203,48 +1202,47 @@ def create_copy_button_with_text(text_content, button_text="📋 클립보드에
         }}
         
         function fallbackCopy(text) {{
-            // 방법 2: 숨겨진 textarea 사용
-            const hiddenTextArea = document.getElementById('hiddenTextArea');
-            if (hiddenTextArea) {{
-                hiddenTextArea.style.position = 'fixed';
-                hiddenTextArea.style.top = '0';
-                hiddenTextArea.style.left = '0';
-                hiddenTextArea.style.width = '1px';
-                hiddenTextArea.style.height = '1px';
-                hiddenTextArea.style.opacity = '0';
-                hiddenTextArea.value = text;
-                hiddenTextArea.focus();
-                hiddenTextArea.select();
-                hiddenTextArea.setSelectionRange(0, 99999);
-                
-                try {{
-                    const successful = document.execCommand('copy');
-                    if (successful) {{
-                        showCopySuccess();
-                    }} else {{
-                        showCopyError();
-                    }}
-                }} catch (err) {{
+            // 방법 2: 임시 textarea 생성하여 복사
+            const textArea = document.createElement('textarea');
+            textArea.value = text;
+            textArea.style.position = 'fixed';
+            textArea.style.left = '-999999px';
+            textArea.style.top = '-999999px';
+            textArea.style.opacity = '0';
+            textArea.style.pointerEvents = 'none';
+            textArea.style.zIndex = '-1';
+            
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+            textArea.setSelectionRange(0, textArea.value.length);
+            
+            try {{
+                const successful = document.execCommand('copy');
+                if (successful) {{
+                    showCopySuccess();
+                }} else {{
                     showCopyError();
                 }}
-                
-                hiddenTextArea.style.position = 'absolute';
-                hiddenTextArea.style.left = '-9999px';
-            }} else {{
+            }} catch (err) {{
                 showCopyError();
+            }} finally {{
+                document.body.removeChild(textArea);
             }}
         }}
         
         function showCopySuccess() {{
             const button = document.getElementById('copyButton');
-            const originalText = button.innerHTML;
-            button.innerHTML = '✅ 복사 완료!';
-            button.style.background = 'linear-gradient(90deg, #28a745, #20c997)';
-            
-            setTimeout(() => {{
-                button.innerHTML = originalText;
-                button.style.background = 'linear-gradient(90deg, #4CAF50, #45a049)';
-            }}, 2000);
+            if (button) {{
+                const originalText = button.innerHTML;
+                button.innerHTML = '✅ 복사 완료!';
+                button.style.background = 'linear-gradient(90deg, #28a745, #20c997)';
+                
+                setTimeout(() => {{
+                    button.innerHTML = originalText;
+                    button.style.background = 'linear-gradient(90deg, #4CAF50, #45a049)';
+                }}, 2000);
+            }}
             
             // 알림도 표시
             alert('✅ 텍스트가 클립보드에 복사되었습니다!');
@@ -1252,14 +1250,16 @@ def create_copy_button_with_text(text_content, button_text="📋 클립보드에
         
         function showCopyError() {{
             const button = document.getElementById('copyButton');
-            const originalText = button.innerHTML;
-            button.innerHTML = '❌ 복사 실패';
-            button.style.background = 'linear-gradient(90deg, #dc3545, #c82333)';
-            
-            setTimeout(() => {{
-                button.innerHTML = originalText;
-                button.style.background = 'linear-gradient(90deg, #4CAF50, #45a049)';
-            }}, 2000);
+            if (button) {{
+                const originalText = button.innerHTML;
+                button.innerHTML = '❌ 복사 실패';
+                button.style.background = 'linear-gradient(90deg, #dc3545, #c82333)';
+                
+                setTimeout(() => {{
+                    button.innerHTML = originalText;
+                    button.style.background = 'linear-gradient(90deg, #4CAF50, #45a049)';
+                }}, 2000);
+            }}
             
             alert('❌ 복사에 실패했습니다. 텍스트 영역을 직접 선택해서 Ctrl+C로 복사해주세요.');
         }}
