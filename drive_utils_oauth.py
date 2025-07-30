@@ -7,7 +7,7 @@ import io
 
 SCOPES = ['https://www.googleapis.com/auth/drive.file']
 TOKEN_FILE = 'token.json'
-CREDENTIALS_FILE = 'credentials.json'
+CREDENTIAL_PATH = os.path.join(os.path.dirname(__file__), 'credentials.json')
 FILENAME = 'portfolio_data.json'
 
 def get_authenticated_service():
@@ -15,7 +15,7 @@ def get_authenticated_service():
         from google.oauth2.credentials import Credentials
         creds = Credentials.from_authorized_user_file(TOKEN_FILE, SCOPES)
     else:
-        flow = InstalledAppFlow.from_client_secrets_file(CREDENTIALS_FILE, SCOPES)
+        flow = InstalledAppFlow.from_client_secrets_file(CREDENTIAL_PATH, SCOPES)
         creds = flow.run_local_server(port=0)
         with open(TOKEN_FILE, 'w') as token:
             token.write(creds.to_json())
