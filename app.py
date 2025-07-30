@@ -1207,7 +1207,6 @@ if st.button("✍️ 추천 요청 문장 생성"):
             text = f"""아래는 오늘 기준 내 미국 주식 포트폴리오 전체 구성이다:
 * 보유 현금: {format_currency(st.session_state.cash_amount, st.session_state.currency_mode, st.session_state.exchange_rate)}
 * 누적 수수료: {format_currency(st.session_state.total_commission, st.session_state.currency_mode, st.session_state.exchange_rate)}
-* 현재 환율: 1 USD = ₩{st.session_state.exchange_rate:,.0f}
 """
             
             for stock in holdings:
@@ -1262,7 +1261,6 @@ if st.button("✍️ 추천 요청 문장 생성"):
 
 5. **수수료 0.25%를 고려한 실질 매매 전략**을 포함해줘
 
-📌 답변은 {currency_text} 기준으로 해줘 (현재 환율: 1 USD = ₩{st.session_state.exchange_rate:,.0f}).
             """.strip()
             
             st.text_area("📨 복사해서 GPT 추천 요청에 붙여넣기", value=text, height=400, key="recommendation_text")
