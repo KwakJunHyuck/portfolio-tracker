@@ -17,8 +17,22 @@ from drive_utils import (
 
 def write_service_account_file():
     os.makedirs("data", exist_ok=True)
+    secrets = st.secrets["gdrive"]
+    credentials_dict = {
+        "type": secrets.type,
+        "project_id": secrets.project_id,
+        "private_key_id": secrets.private_key_id,
+        "private_key": secrets.private_key,
+        "client_email": secrets.client_email,
+        "client_id": secrets.client_id,
+        "auth_uri": secrets.auth_uri,
+        "token_uri": secrets.token_uri,
+        "auth_provider_x509_cert_url": secrets.auth_provider_x509_cert_url,
+        "client_x509_cert_url": secrets.client_x509_cert_url,
+        "universe_domain": secrets.universe_domain
+    }
     with open("data/service_account.json", "w", encoding="utf-8") as f:
-        json.dump(st.secrets["gdrive"], f)
+        json.dump(credentials_dict, f)
 
 
 st.set_page_config(
@@ -86,7 +100,7 @@ def load_portfolio_data():
 def write_service_account_file():
     os.makedirs("data", exist_ok=True)
     with open("data/service_account.json", "w", encoding="utf-8") as f:
-        json.dump(dict(st.secrets["gdrive"]), f)  # <-- dict()로 변환
+        json.dump(dict(st.secrets["gdrive"]), f)
 
 # 자동 데이터 저장 함수
 def save_portfolio_data():
