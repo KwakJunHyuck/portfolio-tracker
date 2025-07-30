@@ -1275,7 +1275,6 @@ if st.button("✍️ 추천 요청 문장 생성"):
 
 5. **수수료 0.25%를 고려한 실질 매매 전략**을 포함해줘
 
-📌 답변은 {currency_text} 기준으로 해줘 (현재 환율: 1 USD = ₩{st.session_state.exchange_rate:,.0f}).
             """.strip()
             
             st.text_area("📨 복사해서 GPT 추천 요청에 붙여넣기", value=text, height=400, key="recommendation_text")
