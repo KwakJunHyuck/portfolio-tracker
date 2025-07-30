@@ -7,7 +7,7 @@ import io
 
 SCOPES = ['https://www.googleapis.com/auth/drive.file']
 TOKEN_FILE = 'token.json'
-CREDENTIAL_PATH = os.path.join(os.path.dirname(__file__), 'credentials.json')
+CREDENTIAL_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), 'credentials.json'))
 FILENAME = 'portfolio_data.json'
 
 def get_authenticated_service():
@@ -44,3 +44,6 @@ def download_file(service, save_as=FILENAME):
     while done is False:
         status, done = downloader.next_chunk()
     return True
+
+print(f"🔍 credentials 경로: {CREDENTIAL_PATH}")
+print(f"📁 파일 존재 여부: {os.path.exists(CREDENTIAL_PATH)}")
