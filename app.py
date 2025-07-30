@@ -1155,53 +1155,42 @@ else:
 
 st.markdown("---")
 
-# 복사 기능을 위한 JavaScript 함수
-def create_copy_button(text_content, button_text="📋 클립보드에 복사"):
-    """클립보드 복사 버튼 생성"""
-    # 고유 ID 생성
-    import hashlib
-    button_id = hashlib.md5(text_content.encode()).hexdigest()[:8]
-    
-    # JavaScript와 HTML을 함께 반환
-    html_code = f"""
-    <script>
-    function copyText{button_id}() {{
-        const text = `{text_content.replace('`', '\\`').replace('\\', '\\\\')}`;
-        navigator.clipboard.writeText(text).then(function() {{
-            alert('텍스트가 클립보드에 복사되었습니다! 📋✨');
-        }}, function(err) {{
-            // 복사 실패 시 대체 방법
-            const textArea = document.createElement('textarea');
-            textArea.value = text;
-            document.body.appendChild(textArea);
-            textArea.select();
-            try {{
-                document.execCommand('copy');
-                alert('텍스트가 클립보드에 복사되었습니다! 📋✨');
-            }} catch (err) {{
-                alert('복사에 실패했습니다. 수동으로 복사해주세요.');
+# 간단한 복사 버튼 생성 함수
+def create_simple_copy_button(button_text="📋 클립보드에 복사"):
+    """간단한 복사 버튼 HTML 생성"""
+    return f"""
+    <div style="margin: 10px 0;">
+        <button style="
+            background: linear-gradient(90deg, #4CAF50, #45a049);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+            width: 100%;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        " onclick="
+            // 텍스트 영역에서 텍스트 가져오기
+            const textArea = document.querySelector('[data-testid=stTextArea] textarea');
+            if (textArea) {{
+                textArea.select();
+                textArea.setSelectionRange(0, 99999);
+                navigator.clipboard.writeText(textArea.value).then(() => {{
+                    alert('✅ 텍스트가 클립보드에 복사되었습니다!');
+                }}).catch(() => {{
+                    try {{
+                        document.execCommand('copy');
+                        alert('✅ 텍스트가 클립보드에 복사되었습니다!');
+                    }} catch (err) {{
+                        alert('❌ 복사에 실패했습니다. Ctrl+A, Ctrl+C로 수동 복사해주세요.');
+                    }}
+                }});
             }}
-            document.body.removeChild(textArea);
-        }});
-    }}
-    </script>
-    <button onclick="copyText{button_id}()" class="copy-button" style="
-        background: linear-gradient(90deg, #4CAF50, #45a049);
-        color: white;
-        border: none;
-        padding: 12px 24px;
-        border-radius: 8px;
-        cursor: pointer;
-        font-size: 16px;
-        font-weight: bold;
-        margin: 10px 0;
-        width: 100%;
-        transition: all 0.3s ease;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-    " onmouseover="this.style.background='linear-gradient(90deg, #45a049, #4CAF50)'; this.style.transform='translateY(-2px)'; this.style.boxShadow='0 4px 8px rgba(0,0,0,0.3)'" 
-       onmouseout="this.style.background='linear-gradient(90deg, #4CAF50, #45a049)'; this.style.transform='translateY(0)'; this.style.boxShadow='0 2px 5px rgba(0,0,0,0.2)'">{button_text}</button>
+        ">{button_text}</button>
+    </div>
     """
-    return html_code
 
 st.subheader("💡 종목 추천 문장 자동 생성")
 
@@ -1215,10 +1204,10 @@ if st.button("✍️ 추천 요청 문장 생성"):
             currency_text = "원화" if st.session_state.currency_mode == "KRW" else "달러"
             currency_symbol = get_currency_symbol(st.session_state.currency_mode)
             
-            text = f"""현재 포트폴리오 구성은 다음과 같아 ({currency_text} 기준):
-- 보유 현금: {format_currency(st.session_state.cash_amount, st.session_state.currency_mode, st.session_state.exchange_rate)}
-- 누적 수수료: {format_currency(st.session_state.total_commission, st.session_state.currency_mode, st.session_state.exchange_rate)}
-- 환율: 1 USD = ₩{st.session_state.exchange_rate:,.0f}
+            text = f"""아래는 오늘 기준 내 미국 주식 포트폴리오 전체 구성이다:
+* 보유 현금: {format_currency(st.session_state.cash_amount, st.session_state.currency_mode, st.session_state.exchange_rate)}
+* 누적 수수료: {format_currency(st.session_state.total_commission, st.session_state.currency_mode, st.session_state.exchange_rate)}
+* 현재 환율: 1 USD = ₩{st.session_state.exchange_rate:,.0f}
 """
             
             for stock in holdings:
@@ -1229,7 +1218,7 @@ if st.button("✍️ 추천 요청 문장 생성"):
                     buy_price_display = f"${stock['매수단가']}"
                     current_price_display = f"${stock['현재가']}"
                 
-                text += f"- {stock['종목']}: {stock['수량']}주 (매수단가 {buy_price_display}, 현재가 {current_price_display}, 수익률 {stock['수익률(%)']:.2f}%)\n"
+                text += f"* {stock['종목']}: {stock['수량']}주 (매수단가 {buy_price_display}, 현재가 {current_price_display}, 수익률 {stock['수익률(%)']:.2f}%)\n"
             
             # 성과 요약 추가
             if st.session_state.realized_pnl:
@@ -1240,56 +1229,46 @@ if st.button("✍️ 추천 요청 문장 생성"):
                 win_rate = (win_trades / total_trades * 100) if total_trades > 0 else 0
                 
                 text += f"""
-거래 성과:
-- 총 실현손익: {format_currency(total_realized, st.session_state.currency_mode, st.session_state.exchange_rate)}
-- 승률: {win_rate:.1f}% ({win_trades}/{total_trades})
-- 총 거래 완료: {total_trades}건
+* 총 실현손익: {format_currency(total_realized, st.session_state.currency_mode, st.session_state.exchange_rate)}
+* 승률: {win_rate:.1f}% ({win_trades}/{total_trades})
+* 총 거래 완료: {total_trades}건
 """
             
             text += f"""
 
 📌 이 포트폴리오를 바탕으로 아래 전략을 도출해줘:
 
-현재 보유 중인 각 종목에 대해
+1. **현재 보유 중인 각 종목에 대해**
+   * 보유 지속 vs 익절 vs 손절 여부 판단
+   * 전략이 필요한 경우 몇 주를 매도하거나 추가 매수할지
+   * 판단 기준은 기술적 분석 / 뉴스 / 수급 흐름 / AI 예측 / 실적 모멘텀 등
+   * 단기/중기/장기 관점에서 구분해 설명해줘
 
-보유 지속 vs 익절 vs 손절 여부 판단
+2. **오늘 기준으로 전체 미국 시장 중**
+   * 지금 이 시점에서 매수해야 할 **진짜 가치 있는 종목이 있다면 1~2개 추천해줘**
+   * 단, **1주당 가격이 $500 이하**, **지금 당장 매수 가능한 가격대**, **상승 확률 70% 이상인 종목만**
+   * 각 종목은 다음 정보를 포함해줘:
+     • 추천 매수가 / 손절가 / 익절가 / 예상 보유 기간
+     • 상승 확률 (%) / 추천 점수 (100점 만점)
+     • 선정 이유 (기술 분석 / 뉴스 / 수급 흐름 각각 따로 설명)
 
-전략이 필요한 경우 몇 주를 매도하거나 추가 매수할지
+3. **과매매는 피하고 싶으니**,
+   * **보유 종목 리밸런싱이 불필요하다면 '유지' 판단을 명확히 내려줘**
+   * 신규 매수는 **정말 매력적인 종목일 경우에만 추천해줘**
 
-판단 기준은 기술적 분석 / 뉴스 / 수급 흐름 / AI 예측 / 실적 모멘텀 등
+4. **총 자산 기준으로 종목별 비중이 적절한지도 평가해줘**
+   * 각 종목별 투자금액/비중
+   * 현금 보유 비중은 **시장 상황을 반영하여 추천 수준 제시**
 
-단기/중기/장기 관점에서 구분해 설명해줘
+5. **수수료 0.25%를 고려한 실질 매매 전략**을 포함해줘
 
-오늘 기준으로 전체 미국 시장 중
-
-지금 이 시점에서 매수해야 할 진짜 가치 있는 종목이 있다면 1~2개 추천해줘
-
-단, 1주당 가격이 $500 이하, 지금 당장 매수 가능한 가격대, 상승 확률 70% 이상인 종목만
-
-각 종목은 다음 정보를 포함해줘:
-• 추천 매수가 / 손절가 / 익절가 / 예상 보유 기간
-• 상승 확률 (%) / 추천 점수 (100점 만점)
-• 선정 이유 (기술 분석 / 뉴스 / 수급 흐름 각각 따로 설명)
-
-과매매는 피하고 싶으니,
-
-보유 종목 리밸런싱이 불필요하다면 '유지' 판단을 명확히 내려줘
-
-신규 매수는 정말 매력적인 종목일 경우에만 추천해줘
-
-총 자산 기준으로 종목별 비중이 적절한지도 평가해줘
-
-각 종목별 투자금액/비중
-
-현금 보유 비중은 시장 상황을 반영하여 추천 수준 제시
-📌 수수료 0.25%를 고려한 매매 전략도 포함해줘.
 📌 답변은 {currency_text} 기준으로 해줘 (현재 환율: 1 USD = ₩{st.session_state.exchange_rate:,.0f}).
             """.strip()
             
             st.text_area("📨 복사해서 GPT 추천 요청에 붙여넣기", value=text, height=400, key="recommendation_text")
             
-            # 향상된 복사 버튼 추가
-            copy_button_html = create_copy_button(text, "📋 클립보드에 복사하기")
+            # 간단한 복사 버튼 추가
+            copy_button_html = create_simple_copy_button("📋 클립보드에 복사하기")
             st.markdown(copy_button_html, unsafe_allow_html=True)
             
             # 다운로드 버튼
