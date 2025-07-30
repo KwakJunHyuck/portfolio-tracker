@@ -3,15 +3,20 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
 import io
 import os
+import streamlit as st
 
 SERVICE_ACCOUNT_FILE = 'data/service_account.json'
 SCOPES = ['https://www.googleapis.com/auth/drive']
 FOLDER_NAME = '포트폴리오_백업'
 
 def get_drive_service():
-    credentials = service_account.Credentials.from_service_account_file(
-        SERVICE_ACCOUNT_FILE, scopes=SCOPES)
-    return build('drive', 'v3', credentials=credentials)
+    try:
+        credentials = service_account.Credentials.from_service_account_file(
+            SERVICE_ACCOUNT_FILE, scopes=SCOPES)
+        return build('drive', 'v3', credentials=credentials)
+    except Exception as e:
+        st.error(f"⚠️ Google Drive 인증 실패: {e}")
+        raise
 
 def get_folder_id(service, folder_name):
     results = service.files().list(

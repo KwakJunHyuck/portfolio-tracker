@@ -17,22 +17,31 @@ from drive_utils import (
 
 def write_service_account_file():
     os.makedirs("data", exist_ok=True)
-    secrets = st.secrets["gdrive"]
-    credentials_dict = {
-        "type": secrets.type,
-        "project_id": secrets.project_id,
-        "private_key_id": secrets.private_key_id,
-        "private_key": secrets.private_key,
-        "client_email": secrets.client_email,
-        "client_id": secrets.client_id,
-        "auth_uri": secrets.auth_uri,
-        "token_uri": secrets.token_uri,
-        "auth_provider_x509_cert_url": secrets.auth_provider_x509_cert_url,
-        "client_x509_cert_url": secrets.client_x509_cert_url,
-        "universe_domain": secrets.universe_domain
-    }
-    with open("data/service_account.json", "w", encoding="utf-8") as f:
-        json.dump(credentials_dict, f)
+    try:
+        secrets = st.secrets["gdrive"]
+        credentials_dict = {
+            "type": secrets.get("type"),
+            "project_id": secrets.get("project_id"),
+            "private_key_id": secrets.get("private_key_id"),
+            "private_key": secrets.get("private_key"),
+            "client_email": secrets.get("client_email"),
+            "client_id": secrets.get("client_id"),
+            "auth_uri": secrets.get("auth_uri"),
+            "token_uri": secrets.get("token_uri"),
+            "auth_provider_x509_cert_url": secrets.get("auth_provider_x509_cert_url"),
+            "client_x509_cert_url": secrets.get("client_x509_cert_url"),
+            "universe_domain": secrets.get("universe_domain", "googleapis.com")
+        }
+
+        if not all(credentials_dict.values()):
+            st.error("⚠️ Google Drive 비밀키 정보가 누락되어 있습니다. secrets.toml 파일을 확인하세요.")
+            return
+
+        with open("data/service_account.json", "w", encoding="utf-8") as f:
+            json.dump(credentials_dict, f)
+    except Exception as e:
+        st.error(f"⚠️ 서비스 계정 파일 생성 중 오류: {e}")
+
 
 st.set_page_config(
     page_title="📊 포트폴리오 트래커", 
@@ -41,6 +50,15 @@ st.set_page_config(
 )
 
 write_service_account_file()
+
+st.write("🔐 gdrive secrets preview:", st.secrets.get("gdrive", {}))
+st.set_page_config(
+    page_title="📈 포트폴리오 트래커",
+    layout="wide",
+    initial_sidebar_state="collapsed"
+)
+
+service = get_drive_service()
 
 # CSS for mobile-friendly design
 st.markdown("""
@@ -95,11 +113,6 @@ def load_portfolio_data():
                    data.get("total_commission", 0.0),
                    data.get("best_worst_trades", {"best": None, "worst": None}))
     return [], 0.0, [], {}, [], {}, 0.0, {"best": None, "worst": None}
-
-def write_service_account_file():
-    os.makedirs("data", exist_ok=True)
-    with open("data/service_account.json", "w", encoding="utf-8") as f:
-        json.dump(dict(st.secrets["gdrive"]), f)
 
 # 자동 데이터 저장 함수
 def save_portfolio_data():
