@@ -13,7 +13,8 @@ from drive_utils import (
     get_folder_id,
     upload_file,
     download_file,
-    FOLDER_NAME
+    FOLDER_NAME,
+    get_authenticated_service
 )
 
 def write_service_account_file():
@@ -91,11 +92,12 @@ with col1:
     if st.button("📤 Google Drive에 백업"):
         try:
             service = get_authenticated_service()
-            if not os.path.exists("portfolio_data.json"):
-                with open("portfolio_data.json", "w") as f:
-                    f.write("{}")  # 초기화
-            file_id = upload_file(service)
-            st.success(f"Google Drive에 백업 완료! 파일 ID: {file_id}")
+            folder_id = get_folder_id(service, FOLDER_NAME)
+            if not folder_id:
+                st.error("Google Drive에 백업 폴더가 없습니다.")
+            else:
+                upload_file(service, folder_id, "portfolio_data.json", "portfolio_data.json")
+                st.success("Google Drive에 백업 완료!")
         except Exception as e:
             st.error(f"⚠️ Google Drive 백업 중 오류: {e}")
         pass
