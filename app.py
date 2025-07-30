@@ -17,7 +17,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# CSS for mobile-friendly design
+# CSS for mobile-friendly design + 복사 버튼 스타일
 st.markdown("""
 <style>
     .stMetric > div > div > div > div {
@@ -36,7 +36,41 @@ st.markdown("""
     }
     .profit { color: #00C851; font-weight: bold; }
     .loss { color: #FF4444; font-weight: bold; }
+    
+    /* 복사 버튼 스타일 */
+    .copy-button {
+        background: linear-gradient(90deg, #4CAF50, #45a049);
+        color: white;
+        border: none;
+        padding: 8px 16px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 14px;
+        margin: 5px 0;
+        width: 100%;
+    }
+    .copy-button:hover {
+        background: linear-gradient(90deg, #45a049, #4CAF50);
+    }
+    
+    /* 통화 토글 스타일 */
+    .currency-toggle {
+        background-color: #f0f2f6;
+        padding: 10px;
+        border-radius: 8px;
+        margin: 10px 0;
+    }
 </style>
+
+<script>
+function copyToClipboard(text) {
+    navigator.clipboard.writeText(text).then(function() {
+        alert('텍스트가 클립보드에 복사되었습니다!');
+    }, function(err) {
+        console.error('복사 실패: ', err);
+    });
+}
+</script>
 """, unsafe_allow_html=True)
 
 st.title("📈 스마트 포트폴리오 트래커")
@@ -44,6 +78,31 @@ st.title("📈 스마트 포트폴리오 트래커")
 # 한국 시간대 설정
 KST = pytz.timezone('Asia/Seoul')
 COMMISSION_RATE = 0.0025  # 0.25% 수수료
+
+# USD to KRW 환율 (실시간 또는 고정값)
+def get_usd_to_krw_rate():
+    """USD to KRW 환율 가져오기"""
+    try:
+        # 실시간 환율 가져오기
+        krw_ticker = yf.Ticker("KRW=X")
+        rate = krw_ticker.history(period="1d")["Close"].iloc[-1]
+        return rate
+    except:
+        # 실패 시 기본값 (대략적인 환율)
+        return 1320.0  # 2024년 기준 대략적인 환율
+
+# 통화 변환 함수들
+def format_currency(amount, currency="USD", exchange_rate=1320.0):
+    """금액을 선택된 통화로 포맷"""
+    if currency == "KRW":
+        krw_amount = amount * exchange_rate
+        return f"₩{krw_amount:,.0f}"
+    else:
+        return f"${amount:,.2f}"
+
+def get_currency_symbol(currency="USD"):
+    """통화 기호 반환"""
+    return "₩" if currency == "KRW" else "$"
 
 # 다중 데이터 폴더 설정 (데이터 유실 방지)
 PRIMARY_DATA_DIR = "data"
@@ -66,6 +125,33 @@ def get_korean_time():
 def get_korean_date():
     return datetime.now(KST).strftime("%Y-%m-%d")
 
+# 통화 설정 초기화
+if "currency_mode" not in st.session_state:
+    st.session_state.currency_mode = "USD"
+
+if "exchange_rate" not in st.session_state:
+    st.session_state.exchange_rate = get_usd_to_krw_rate()
+
+# 통화 선택 위젯
+st.markdown('<div class="currency-toggle">', unsafe_allow_html=True)
+col_currency1, col_currency2, col_currency3 = st.columns([2, 2, 2])
+
+with col_currency1:
+    currency_mode = st.selectbox("💱 통화 선택", ["USD", "KRW"], 
+                                index=0 if st.session_state.currency_mode == "USD" else 1)
+    if currency_mode != st.session_state.currency_mode:
+        st.session_state.currency_mode = currency_mode
+
+with col_currency2:
+    if st.button("🔄 환율 업데이트"):
+        st.session_state.exchange_rate = get_usd_to_krw_rate()
+        st.success(f"환율 업데이트: 1 USD = ₩{st.session_state.exchange_rate:,.0f}")
+
+with col_currency3:
+    st.metric("💱 현재 환율", f"₩{st.session_state.exchange_rate:,.0f}")
+
+st.markdown('</div>', unsafe_allow_html=True)
+
 # 다중 백업 저장 함수 (데이터 유실 방지)
 def save_portfolio_data_secure():
     """
@@ -84,6 +170,8 @@ def save_portfolio_data_secure():
         "stock_memos": st.session_state.stock_memos,
         "total_commission": st.session_state.total_commission,
         "best_worst_trades": st.session_state.best_worst_trades,
+        "currency_mode": st.session_state.currency_mode,
+        "exchange_rate": st.session_state.exchange_rate,
         "last_updated": get_korean_time(),
         "backup_timestamp": time.time()
     }
@@ -143,6 +231,10 @@ def load_portfolio_data_secure():
                     if file_path != PRIMARY_FILE:
                         st.warning(f"⚠️ 백업 파일에서 데이터를 복구했습니다: {file_path}")
                     
+                    # 새로운 필드들 추가 (기존 데이터 호환성)
+                    currency_mode = data.get("currency_mode", "USD")
+                    exchange_rate = data.get("exchange_rate", 1320.0)
+                    
                     return (data.get("stocks", []), 
                            data.get("cash", 0.0), 
                            data.get("transactions", []), 
@@ -150,7 +242,9 @@ def load_portfolio_data_secure():
                            data.get("realized_pnl", []),
                            data.get("stock_memos", {}),
                            data.get("total_commission", 0.0),
-                           data.get("best_worst_trades", {"best": None, "worst": None}))
+                           data.get("best_worst_trades", {"best": None, "worst": None}),
+                           currency_mode,
+                           exchange_rate)
                 
             except Exception as e:
                 st.warning(f"파일 {file_path} 로드 실패: {e}")
@@ -169,13 +263,15 @@ def load_portfolio_data_secure():
                        data.get("realized_pnl", []),
                        data.get("stock_memos", {}),
                        data.get("total_commission", 0.0),
-                       data.get("best_worst_trades", {"best": None, "worst": None}))
+                       data.get("best_worst_trades", {"best": None, "worst": None}),
+                       data.get("currency_mode", "USD"),
+                       data.get("exchange_rate", 1320.0))
         except:
             pass
     
     # 모든 복구 시도 실패
     st.error("❌ 모든 백업 파일이 손상되었습니다. 새로 시작합니다.")
-    return [], 0.0, [], {}, [], {}, 0.0, {"best": None, "worst": None}
+    return [], 0.0, [], {}, [], {}, 0.0, {"best": None, "worst": None}, "USD", 1320.0
 
 # 데이터 무결성 검사
 def validate_data_integrity(data):
@@ -249,7 +345,8 @@ def save_daily_snapshot():
             "total_return_rate": total_return_rate,
             "total_assets": total_assets,
             "cash": st.session_state.cash_amount,
-            "stock_count": len(st.session_state.stocks)
+            "stock_count": len(st.session_state.stocks),
+            "exchange_rate": st.session_state.exchange_rate
         }
         
         # 안전한 저장 (임시 파일 사용)
@@ -299,7 +396,8 @@ if "mobile_mode" not in st.session_state:
 if "initialized" not in st.session_state:
     # 앱 시작 시 기존 데이터 자동 로드
     (stocks, cash, transactions, target_settings, 
-     realized_pnl, stock_memos, total_commission, best_worst_trades) = load_portfolio_data_secure()
+     realized_pnl, stock_memos, total_commission, best_worst_trades,
+     currency_mode, exchange_rate) = load_portfolio_data_secure()
     st.session_state.stocks = stocks
     st.session_state.cash_amount = cash
     st.session_state.transactions = transactions
@@ -308,6 +406,8 @@ if "initialized" not in st.session_state:
     st.session_state.stock_memos = stock_memos
     st.session_state.total_commission = total_commission
     st.session_state.best_worst_trades = best_worst_trades
+    st.session_state.currency_mode = currency_mode
+    st.session_state.exchange_rate = exchange_rate
     st.session_state.initialized = True
     
     # 초기 로드 후 즉시 백업 생성
@@ -373,6 +473,8 @@ if uploaded_file is not None:
             st.session_state.stock_memos = backup_data.get("stock_memos", {})
             st.session_state.total_commission = backup_data.get("total_commission", 0.0)
             st.session_state.best_worst_trades = backup_data.get("best_worst_trades", {"best": None, "worst": None})
+            st.session_state.currency_mode = backup_data.get("currency_mode", "USD")
+            st.session_state.exchange_rate = backup_data.get("exchange_rate", 1320.0)
             
             # 즉시 안전한 저장
             save_portfolio_data_secure()
@@ -388,11 +490,22 @@ st.markdown("---")
 
 # 💰 보유 현금 입력
 st.subheader("💰 보유 현금")
-new_cash = st.number_input("보유 현금 ($)", min_value=0.0, step=100.0, format="%.2f", value=st.session_state.cash_amount, key="main_cash_input")
+currency_symbol = get_currency_symbol(st.session_state.currency_mode)
+current_cash_display = st.session_state.cash_amount if st.session_state.currency_mode == "USD" else st.session_state.cash_amount * st.session_state.exchange_rate
+
+new_cash_input = st.number_input(f"보유 현금 ({currency_symbol})", min_value=0.0, step=100.0 if st.session_state.currency_mode == "USD" else 100000.0, 
+                                format="%.2f" if st.session_state.currency_mode == "USD" else "%.0f", 
+                                value=current_cash_display, key="main_cash_input")
+
+# 입력값을 USD로 변환하여 저장
+if st.session_state.currency_mode == "KRW":
+    new_cash_usd = new_cash_input / st.session_state.exchange_rate
+else:
+    new_cash_usd = new_cash_input
 
 # 현금 변경 시 자동 저장
-if new_cash != st.session_state.cash_amount:
-    st.session_state.cash_amount = new_cash
+if abs(new_cash_usd - st.session_state.cash_amount) > 0.01:  # 소수점 오차 고려
+    st.session_state.cash_amount = new_cash_usd
     save_portfolio_data_secure()
 
 st.markdown("---")
@@ -433,7 +546,8 @@ with tab1:
                 
                 # 현금 확인
                 if final_cost > st.session_state.cash_amount:
-                    st.error(f"현금이 부족합니다! 필요금액: ${final_cost:,.2f}, 보유현금: ${st.session_state.cash_amount:,.2f}")
+                    st.error(f"현금이 부족합니다! 필요금액: {format_currency(final_cost, st.session_state.currency_mode, st.session_state.exchange_rate)}, "
+                           f"보유현금: {format_currency(st.session_state.cash_amount, st.session_state.currency_mode, st.session_state.exchange_rate)}")
                 else:
                     stock = yf.Ticker(symbol)
                     current_price = stock.history(period="1d")["Close"].iloc[-1]
@@ -694,7 +808,18 @@ if st.session_state.transactions:
     st.markdown("---")
     st.subheader("📋 최근 거래 내역")
     df_transactions = pd.DataFrame(st.session_state.transactions[-15:])  # 최근 15건
-    st.dataframe(df_transactions, use_container_width=True)
+    
+    # 거래 내역에 통화 정보 추가
+    if st.session_state.currency_mode == "KRW":
+        df_transactions_display = df_transactions.copy()
+        for col in ['가격', '총액', '수수료', '실제비용', '실제수익']:
+            if col in df_transactions_display.columns:
+                df_transactions_display[col] = df_transactions_display[col].apply(
+                    lambda x: f"₩{x * st.session_state.exchange_rate:,.0f}" if pd.notna(x) else x
+                )
+        st.dataframe(df_transactions_display, use_container_width=True)
+    else:
+        st.dataframe(df_transactions, use_container_width=True)
 
 st.markdown("---")
 
@@ -710,8 +835,10 @@ if st.session_state.stocks:
     if st.session_state.cash_amount > 0:
         asset_data.loc[len(asset_data)] = ["현금", st.session_state.cash_amount]
     
+    # 통화에 따른 제목 변경
+    currency_text = "원화" if st.session_state.currency_mode == "KRW" else "달러"
     fig = px.pie(asset_data, names="종목", values="평가금액", 
-                 title="💼 자산 구성 비율 (현금 포함)")
+                 title=f"💼 자산 구성 비율 (현금 포함, {currency_text} 기준)")
     fig.update_traces(textposition='inside', textinfo='percent+label')
     st.plotly_chart(fig, use_container_width=True)
 
@@ -746,11 +873,29 @@ if st.session_state.stocks:
     df["평가금액"] = df["현재가"] * df["수량"]
     df["투자금액"] = df["매수단가"] * df["수량"]
     
+    # 통화 변환을 위한 데이터프레임 복사
+    if st.session_state.currency_mode == "KRW":
+        df_display = df.copy()
+        # 금액 관련 컬럼들을 원화로 변환
+        currency_columns = ["매수단가", "현재가", "수익", "평가금액", "투자금액"]
+        for col in currency_columns:
+            if col in df_display.columns:
+                df_display[col] = df_display[col] * st.session_state.exchange_rate
+        
+        # 원화 표시를 위한 포맷팅
+        df_display["매수단가"] = df_display["매수단가"].apply(lambda x: f"₩{x:,.0f}")
+        df_display["현재가"] = df_display["현재가"].apply(lambda x: f"₩{x:,.0f}")
+        df_display["수익"] = df_display["수익"].apply(lambda x: f"₩{x:,.0f}")
+        df_display["평가금액"] = df_display["평가금액"].apply(lambda x: f"₩{x:,.0f}")
+        df_display["투자금액"] = df_display["투자금액"].apply(lambda x: f"₩{x:,.0f}")
+    else:
+        df_display = df
+    
     # 색상으로 수익/손실 구분하여 표시
     st.dataframe(
-        df.style.applymap(
+        df_display.style.applymap(
             lambda x: 'color: red' if isinstance(x, (int, float)) and x < 0 else 'color: green' if isinstance(x, (int, float)) and x > 0 else '',
-            subset=['수익', '수익률(%)']
+            subset=['수익률(%)'] if st.session_state.currency_mode == "KRW" else ['수익', '수익률(%)']
         ),
         use_container_width=True
     )
@@ -762,23 +907,23 @@ if st.session_state.stocks:
     total_assets = total_value + st.session_state.cash_amount
     
     if st.session_state.mobile_mode:
-        st.metric("💰 총 투자금액", f"${total_investment:,.2f}")
-        st.metric("📈 총 평가금액", f"${total_value:,.2f}")
-        st.metric("💹 총 수익률", f"{total_return_rate:.2f}%", f"${total_profit:,.2f}")
-        st.metric("🏦 총 자산", f"${total_assets:,.2f}")
-        st.metric("💸 누적 수수료", f"${st.session_state.total_commission:,.2f}")
+        st.metric("💰 총 투자금액", format_currency(total_investment, st.session_state.currency_mode, st.session_state.exchange_rate))
+        st.metric("📈 총 평가금액", format_currency(total_value, st.session_state.currency_mode, st.session_state.exchange_rate))
+        st.metric("💹 총 수익률", f"{total_return_rate:.2f}%", format_currency(total_profit, st.session_state.currency_mode, st.session_state.exchange_rate))
+        st.metric("🏦 총 자산", format_currency(total_assets, st.session_state.currency_mode, st.session_state.exchange_rate))
+        st.metric("💸 누적 수수료", format_currency(st.session_state.total_commission, st.session_state.currency_mode, st.session_state.exchange_rate))
     else:
         col1, col2, col3, col4, col5 = st.columns(5)
         with col1:
-            st.metric("💰 총 투자금액", f"${total_investment:,.2f}")
+            st.metric("💰 총 투자금액", format_currency(total_investment, st.session_state.currency_mode, st.session_state.exchange_rate))
         with col2:
-            st.metric("📈 총 평가금액", f"${total_value:,.2f}")
+            st.metric("📈 총 평가금액", format_currency(total_value, st.session_state.currency_mode, st.session_state.exchange_rate))
         with col3:
-            st.metric("💹 총 수익률", f"{total_return_rate:.2f}%", f"${total_profit:,.2f}")
+            st.metric("💹 총 수익률", f"{total_return_rate:.2f}%", format_currency(total_profit, st.session_state.currency_mode, st.session_state.exchange_rate))
         with col4:
-            st.metric("🏦 총 자산", f"${total_assets:,.2f}")
+            st.metric("🏦 총 자산", format_currency(total_assets, st.session_state.currency_mode, st.session_state.exchange_rate))
         with col5:
-            st.metric("💸 누적 수수료", f"${st.session_state.total_commission:,.2f}")
+            st.metric("💸 누적 수수료", format_currency(st.session_state.total_commission, st.session_state.currency_mode, st.session_state.exchange_rate))
 
 # 🚨 알림 시스템 (목표 달성/손절/익절)
 if st.session_state.stocks and st.session_state.target_settings:
@@ -825,7 +970,7 @@ with col1:
         total_trades = len(df_pnl)
         win_rate = (win_trades / total_trades * 100) if total_trades > 0 else 0
         
-        st.metric("총 실현손익", f"${total_realized:,.2f}")
+        st.metric("총 실현손익", format_currency(total_realized, st.session_state.currency_mode, st.session_state.exchange_rate))
         st.metric("승률", f"{win_rate:.1f}%", f"{win_trades}/{total_trades}")
         
         # 최고/최악 거래
@@ -877,7 +1022,13 @@ if st.session_state.realized_pnl:
             "수익률(%)": "mean",
             "종목": "count"
         }).round(2)
-        monthly_summary.columns = ["월 실현손익($)", "평균 수익률(%)", "거래 횟수"]
+        
+        if st.session_state.currency_mode == "KRW":
+            monthly_summary["실현손익"] = monthly_summary["실현손익"] * st.session_state.exchange_rate
+            monthly_summary.columns = [f"월 실현손익({get_currency_symbol(st.session_state.currency_mode)})", "평균 수익률(%)", "거래 횟수"]
+        else:
+            monthly_summary.columns = ["월 실현손익($)", "평균 수익률(%)", "거래 횟수"]
+        
         st.write("**📊 월별 성과**")
         st.dataframe(monthly_summary)
     
@@ -888,7 +1039,13 @@ if st.session_state.realized_pnl:
             "수익률(%)": "mean",
             "종목": "count"
         }).round(2).tail(4)
-        weekly_summary.columns = ["주 실현손익($)", "평균 수익률(%)", "거래 횟수"]
+        
+        if st.session_state.currency_mode == "KRW":
+            weekly_summary["실현손익"] = weekly_summary["실현손익"] * st.session_state.exchange_rate
+            weekly_summary.columns = [f"주 실현손익({get_currency_symbol(st.session_state.currency_mode)})", "평균 수익률(%)", "거래 횟수"]
+        else:
+            weekly_summary.columns = ["주 실현손익($)", "평균 수익률(%)", "거래 횟수"]
+        
         st.write("**📊 주별 성과 (최근 4주)**")
         st.dataframe(weekly_summary)
 
@@ -911,47 +1068,77 @@ if os.path.exists(DAILY_HISTORY_FILE):
         with col1:
             st.write("**📅 일자별 수익률 현황**")
             display_df = history_df[["total_return_rate", "total_profit", "total_assets"]].copy()
-            display_df.columns = ["수익률(%)", "수익금액($)", "총자산($)"]
-            display_df = display_df.round(2)
+            
+            if st.session_state.currency_mode == "KRW":
+                # 각 날짜의 환율을 사용하여 변환 (없으면 현재 환율 사용)
+                display_df["total_profit"] = display_df.apply(
+                    lambda row: row["total_profit"] * history_df.loc[row.name].get("exchange_rate", st.session_state.exchange_rate), axis=1
+                )
+                display_df["total_assets"] = display_df.apply(
+                    lambda row: row["total_assets"] * history_df.loc[row.name].get("exchange_rate", st.session_state.exchange_rate), axis=1
+                )
+                display_df.columns = ["수익률(%)", f"수익금액({get_currency_symbol(st.session_state.currency_mode)})", f"총자산({get_currency_symbol(st.session_state.currency_mode)})"]
+            else:
+                display_df.columns = ["수익률(%)", "수익금액($)", "총자산($)"]
+            
+            display_df = display_df.round(2 if st.session_state.currency_mode == "USD" else 0)
             st.dataframe(display_df.tail(10))  # 최근 10일
         
         with col2:
             st.write("**📊 자산 구성 변화**")
             recent_data = history_df.tail(1).iloc[0]
-            st.metric("현재 총자산", f"${recent_data['total_assets']:,.2f}")
-            st.metric("현재 투자금액", f"${recent_data['total_investment']:,.2f}")
-            st.metric("현재 평가금액", f"${recent_data['total_value']:,.2f}")
+            recent_exchange_rate = recent_data.get("exchange_rate", st.session_state.exchange_rate)
+            
+            st.metric("현재 총자산", format_currency(recent_data['total_assets'], st.session_state.currency_mode, recent_exchange_rate))
+            st.metric("현재 투자금액", format_currency(recent_data['total_investment'], st.session_state.currency_mode, recent_exchange_rate))
+            st.metric("현재 평가금액", format_currency(recent_data['total_value'], st.session_state.currency_mode, recent_exchange_rate))
             st.metric("보유 종목 수", f"{recent_data['stock_count']}개")
         
         # 총자산 추이 그래프
-        st.write("**📈 총자산 추이 그래프**")
+        currency_text = "원화" if st.session_state.currency_mode == "KRW" else "달러"
+        st.write(f"**📈 총자산 추이 그래프 ({currency_text} 기준)**")
         fig = go.Figure()
+        
+        # 통화 변환
+        if st.session_state.currency_mode == "KRW":
+            # 각 날짜의 환율을 사용하여 변환
+            investment_data = [row["total_investment"] * history_df.loc[idx].get("exchange_rate", st.session_state.exchange_rate) 
+                             for idx, row in history_df.iterrows()]
+            value_data = [row["total_value"] * history_df.loc[idx].get("exchange_rate", st.session_state.exchange_rate) 
+                         for idx, row in history_df.iterrows()]
+            assets_data = [row["total_assets"] * history_df.loc[idx].get("exchange_rate", st.session_state.exchange_rate) 
+                          for idx, row in history_df.iterrows()]
+        else:
+            investment_data = history_df['total_investment'].tolist()
+            value_data = history_df['total_value'].tolist()
+            assets_data = history_df['total_assets'].tolist()
         
         fig.add_trace(go.Scatter(
             x=history_df.index, 
-            y=history_df['total_investment'],
+            y=investment_data,
             name='투자금액',
             line=dict(color='blue')
         ))
         
         fig.add_trace(go.Scatter(
             x=history_df.index, 
-            y=history_df['total_value'],
+            y=value_data,
             name='평가금액',
             line=dict(color='green')
         ))
         
         fig.add_trace(go.Scatter(
             x=history_df.index, 
-            y=history_df['total_assets'],
+            y=assets_data,
             name='총자산',
             line=dict(color='red', width=3)
         ))
         
+        currency_symbol = get_currency_symbol(st.session_state.currency_mode)
         fig.update_layout(
-            title="투자금액 vs 평가금액 vs 총자산 추이",
+            title=f"투자금액 vs 평가금액 vs 총자산 추이 ({currency_text})",
             xaxis_title="날짜",
-            yaxis_title="금액 ($)",
+            yaxis_title=f"금액 ({currency_symbol})",
             height=400
         )
         
@@ -967,6 +1154,55 @@ else:
     st.info("아직 히스토리 데이터가 없습니다. 현재가 업데이트를 통해 일별 데이터를 생성하세요.")
 
 st.markdown("---")
+
+# 복사 기능을 위한 JavaScript 함수
+def create_copy_button(text_content, button_text="📋 클립보드에 복사"):
+    """클립보드 복사 버튼 생성"""
+    # 고유 ID 생성
+    import hashlib
+    button_id = hashlib.md5(text_content.encode()).hexdigest()[:8]
+    
+    # JavaScript와 HTML을 함께 반환
+    html_code = f"""
+    <script>
+    function copyText{button_id}() {{
+        const text = `{text_content.replace('`', '\\`').replace('\\', '\\\\')}`;
+        navigator.clipboard.writeText(text).then(function() {{
+            alert('텍스트가 클립보드에 복사되었습니다! 📋✨');
+        }}, function(err) {{
+            // 복사 실패 시 대체 방법
+            const textArea = document.createElement('textarea');
+            textArea.value = text;
+            document.body.appendChild(textArea);
+            textArea.select();
+            try {{
+                document.execCommand('copy');
+                alert('텍스트가 클립보드에 복사되었습니다! 📋✨');
+            }} catch (err) {{
+                alert('복사에 실패했습니다. 수동으로 복사해주세요.');
+            }}
+            document.body.removeChild(textArea);
+        }});
+    }}
+    </script>
+    <button onclick="copyText{button_id}()" class="copy-button" style="
+        background: linear-gradient(90deg, #4CAF50, #45a049);
+        color: white;
+        border: none;
+        padding: 12px 24px;
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: 16px;
+        font-weight: bold;
+        margin: 10px 0;
+        width: 100%;
+        transition: all 0.3s ease;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+    " onmouseover="this.style.background='linear-gradient(90deg, #45a049, #4CAF50)'; this.style.transform='translateY(-2px)'; this.style.boxShadow='0 4px 8px rgba(0,0,0,0.3)'" 
+       onmouseout="this.style.background='linear-gradient(90deg, #4CAF50, #45a049)'; this.style.transform='translateY(0)'; this.style.boxShadow='0 2px 5px rgba(0,0,0,0.2)'">{button_text}</button>
+    """
+    return html_code
+
 st.subheader("💡 종목 추천 문장 자동 생성")
 
 if st.button("✍️ 추천 요청 문장 생성"):
@@ -975,13 +1211,25 @@ if st.button("✍️ 추천 요청 문장 생성"):
         if not holdings:
             st.warning("먼저 종목을 추가해주세요.")
         else:
-            text = f"""현재 포트폴리오 구성은 다음과 같아:
-- 보유 현금: ${st.session_state.cash_amount:,.2f}
-- 누적 수수료: ${st.session_state.total_commission:,.2f}
+            # 현재 통화 설정에 따른 텍스트 생성
+            currency_text = "원화" if st.session_state.currency_mode == "KRW" else "달러"
+            currency_symbol = get_currency_symbol(st.session_state.currency_mode)
+            
+            text = f"""현재 포트폴리오 구성은 다음과 같아 ({currency_text} 기준):
+- 보유 현금: {format_currency(st.session_state.cash_amount, st.session_state.currency_mode, st.session_state.exchange_rate)}
+- 누적 수수료: {format_currency(st.session_state.total_commission, st.session_state.currency_mode, st.session_state.exchange_rate)}
+- 환율: 1 USD = ₩{st.session_state.exchange_rate:,.0f}
 """
             
             for stock in holdings:
-                text += f"- {stock['종목']}: {stock['수량']}주 (매수단가 ${stock['매수단가']}, 현재가 ${stock['현재가']}, 수익률 {stock['수익률(%)']:.2f}%)\n"
+                if st.session_state.currency_mode == "KRW":
+                    buy_price_display = f"₩{stock['매수단가'] * st.session_state.exchange_rate:,.0f}"
+                    current_price_display = f"₩{stock['현재가'] * st.session_state.exchange_rate:,.0f}"
+                else:
+                    buy_price_display = f"${stock['매수단가']}"
+                    current_price_display = f"${stock['현재가']}"
+                
+                text += f"- {stock['종목']}: {stock['수량']}주 (매수단가 {buy_price_display}, 현재가 {current_price_display}, 수익률 {stock['수익률(%)']:.2f}%)\n"
             
             # 성과 요약 추가
             if st.session_state.realized_pnl:
@@ -993,38 +1241,62 @@ if st.button("✍️ 추천 요청 문장 생성"):
                 
                 text += f"""
 거래 성과:
-- 총 실현손익: ${total_realized:,.2f}
+- 총 실현손익: {format_currency(total_realized, st.session_state.currency_mode, st.session_state.exchange_rate)}
 - 승률: {win_rate:.1f}% ({win_trades}/{total_trades})
 - 총 거래 완료: {total_trades}건
 """
             
-            text += """
-            
-📌 아래 리밸런싱 전략을 구체적으로 알려줘:
-- 각 종목들의 전망과 AI예측을 통해 보유/익절/손절 등의 전략을 세워서
-- 어떤 종목을 **몇 주 매도하고**
-- 현재 조회시점의 이 주식은 꼭 사야한다는 주식이 있다면 추천해줘
-- 추천 받은 종목을 **몇 주 매수하면 좋을지**
-- 총 투자 금액 기준으로 각 종목에 얼마씩 배분하는 게 적절한지
-- 보유 현금 비중은 전체 자산 대비 어느 정도가 적절할지도 알려줘
+            text += f"""
 
-그리고 다음 정보를 반드시 포함해줘:
-- 추천 매수가 / 손절가 / 익절가 / 예상 보유 기간
-- 상승 확률 (%) / 추천 점수 (100점 만점)
-- 선정 이유: 기술 분석 / 뉴스 / 수급 흐름
+📌 이 포트폴리오를 바탕으로 아래 전략을 도출해줘:
 
-📌 단, 현재 주가 수준에서 매수 가능한 종목만 추천해줘.
-📌 1주당 가격은 $500 이하인 종목만 포함해줘.
+현재 보유 중인 각 종목에 대해
+
+보유 지속 vs 익절 vs 손절 여부 판단
+
+전략이 필요한 경우 몇 주를 매도하거나 추가 매수할지
+
+판단 기준은 기술적 분석 / 뉴스 / 수급 흐름 / AI 예측 / 실적 모멘텀 등
+
+단기/중기/장기 관점에서 구분해 설명해줘
+
+오늘 기준으로 전체 미국 시장 중
+
+지금 이 시점에서 매수해야 할 진짜 가치 있는 종목이 있다면 1~2개 추천해줘
+
+단, 1주당 가격이 $500 이하, 지금 당장 매수 가능한 가격대, 상승 확률 70% 이상인 종목만
+
+각 종목은 다음 정보를 포함해줘:
+• 추천 매수가 / 손절가 / 익절가 / 예상 보유 기간
+• 상승 확률 (%) / 추천 점수 (100점 만점)
+• 선정 이유 (기술 분석 / 뉴스 / 수급 흐름 각각 따로 설명)
+
+과매매는 피하고 싶으니,
+
+보유 종목 리밸런싱이 불필요하다면 '유지' 판단을 명확히 내려줘
+
+신규 매수는 정말 매력적인 종목일 경우에만 추천해줘
+
+총 자산 기준으로 종목별 비중이 적절한지도 평가해줘
+
+각 종목별 투자금액/비중
+
+현금 보유 비중은 시장 상황을 반영하여 추천 수준 제시
 📌 수수료 0.25%를 고려한 매매 전략도 포함해줘.
+📌 답변은 {currency_text} 기준으로 해줘 (현재 환율: 1 USD = ₩{st.session_state.exchange_rate:,.0f}).
             """.strip()
             
             st.text_area("📨 복사해서 GPT 추천 요청에 붙여넣기", value=text, height=400, key="recommendation_text")
             
-            # 다운로드 버튼으로 대체
+            # 향상된 복사 버튼 추가
+            copy_button_html = create_copy_button(text, "📋 클립보드에 복사하기")
+            st.markdown(copy_button_html, unsafe_allow_html=True)
+            
+            # 다운로드 버튼
             st.download_button(
-                label="📋 텍스트 파일로 다운로드",
+                label="📁 텍스트 파일로 다운로드",
                 data=text.encode('utf-8'),
-                file_name=f"portfolio_recommendation_{get_korean_date()}.txt",
+                file_name=f"portfolio_recommendation_{get_korean_date()}_{st.session_state.currency_mode}.txt",
                 mime="text/plain",
                 use_container_width=True
             )
@@ -1061,8 +1333,9 @@ if st.session_state.stocks:
                 warnings.append(f"   - {stock['종목']}: {stock['비중']:.1f}%")
     
     # 수수료 과다 경고
-    if st.session_state.total_commission > 1000:
-        warnings.append(f"💸 **높은 수수료**: 총 ${st.session_state.total_commission:,.2f} 지출")
+    commission_threshold = 1000 if st.session_state.currency_mode == "USD" else 1000000
+    if st.session_state.total_commission > (commission_threshold / st.session_state.exchange_rate if st.session_state.currency_mode == "KRW" else commission_threshold):
+        warnings.append(f"💸 **높은 수수료**: 총 {format_currency(st.session_state.total_commission, st.session_state.currency_mode, st.session_state.exchange_rate)} 지출")
     
     if warnings:
         for warning in warnings:
@@ -1087,8 +1360,17 @@ with col1:
 
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
-            # 현재 포트폴리오
-            df.to_excel(writer, index=False, sheet_name="현재포트폴리오")
+            # 현재 포트폴리오 (통화별로 시트 생성)
+            df_usd = df.copy()
+            df_usd.to_excel(writer, index=False, sheet_name="현재포트폴리오_USD")
+            
+            # 원화 시트 추가
+            df_krw = df.copy()
+            currency_columns = ["매수단가", "현재가", "수익", "평가금액", "투자금액"]
+            for col in currency_columns:
+                if col in df_krw.columns:
+                    df_krw[col] = df_krw[col] * st.session_state.exchange_rate
+            df_krw.to_excel(writer, index=False, sheet_name="현재포트폴리오_KRW")
             
             # 거래내역
             if st.session_state.transactions:
@@ -1111,7 +1393,7 @@ with col1:
         st.download_button(
             label="📥 엑셀 백업",
             data=buffer.getvalue(),
-            file_name=f"portfolio_complete_{get_korean_date()}.xlsx",
+            file_name=f"portfolio_complete_{get_korean_date()}_{st.session_state.currency_mode}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             use_container_width=True
         )
@@ -1124,7 +1406,7 @@ with col1:
         st.download_button(
             label="📥 JSON 백업",
             data=json_data.encode('utf-8'),
-            file_name=f"portfolio_backup_{get_korean_date()}.json",
+            file_name=f"portfolio_backup_{get_korean_date()}_{st.session_state.currency_mode}.json",
             mime="application/json",
             use_container_width=True
         )
@@ -1181,6 +1463,8 @@ with col3:
             st.session_state.stock_memos = {}
             st.session_state.total_commission = 0.0
             st.session_state.best_worst_trades = {"best": None, "worst": None}
+            st.session_state.currency_mode = "USD"
+            st.session_state.exchange_rate = 1320.0
             
             # 파일들 삭제
             for file_path in [PRIMARY_FILE, DAILY_HISTORY_FILE]:
@@ -1192,91 +1476,81 @@ with col3:
 
 # 앱 정보
 st.markdown("---")
-with st.expander("ℹ️ 개선된 앱 정보 및 데이터 보호 기능"):
-    st.markdown("""
-    ### 🛡️ **데이터 보호 기능 (NEW!)**
+with st.expander("ℹ️ 개선된 앱 정보 및 새로운 기능"):
+    st.markdown(f"""
+    ### 🆕 **새로운 기능들 (v2.1)**
+    - **💱 다중 통화 지원**: USD/KRW 선택 가능, 실시간 환율 업데이트
+    - **📋 스마트 복사 기능**: 추천 문장을 클릭 한 번으로 클립보드에 복사
+    - **💰 통화별 데이터 표시**: 모든 금액을 선택한 통화로 표시
+    - **📊 통화별 엑셀 백업**: USD/KRW 두 시트로 백업 파일 생성
+    - **🔄 환율 자동 저장**: 일별 히스토리에 환율 정보 포함
+    - **📈 통화별 차트**: 선택한 통화 기준으로 모든 차트 표시
+    
+    ### 🛡️ **데이터 보호 기능**
     - **3중 백업 시스템**: 기본 파일 + 2개 백업 폴더에 동시 저장
     - **자동 타임스탬프 백업**: 1시간마다 자동으로 시간 기록된 백업 생성
     - **데이터 무결성 검사**: 파일 손상 시 자동으로 백업에서 복구
     - **세션 백업**: 브라우저 메모리에도 백업 저장
     - **안전한 파일 저장**: 임시 파일 사용으로 저장 중 오류 방지
     - **복구 우선순위**: 기본 → 백업1 → 백업2 → 세션 순으로 자동 복구
-    - **실시간 상태 모니터링**: 백업 개수, 파일 크기, 마지막 저장 시간 표시
     
-    ### 🚀 **핵심 기능**
+    ### 💱 **통화 기능 사용법**
+    - **통화 선택**: 페이지 상단에서 USD/KRW 선택
+    - **환율 업데이트**: "환율 업데이트" 버튼으로 실시간 환율 적용
+    - **자동 변환**: 모든 금액이 선택한 통화로 자동 변환 표시
+    - **백업 호환성**: 기존 USD 데이터와 완전 호환
+    - **현재 환율**: {st.session_state.exchange_rate:,.0f} KRW/USD
+    
+    ### 📋 **복사 기능 사용법**
+    - **추천 문장 생성**: "추천 요청 문장 생성" 버튼 클릭
+    - **원클릭 복사**: "클립보드에 복사하기" 버튼으로 즉시 복사
+    - **자동 알림**: 복사 완료 시 알림 메시지 표시
+    - **브라우저 호환**: 모든 주요 브라우저에서 작동
+    - **오류 처리**: 복사 실패 시 대체 방법 자동 실행
+    
+    ### 🚀 **기존 핵심 기능들**
     - **완전 자동 저장**: 모든 변경사항이 즉시 3중 백업으로 저장
     - **데이터 유실 방지**: 파일 손상, 브라우저 종료 등에도 데이터 보호
-    - **오프라인 작동**: 구글 드라이브 없이도 완벽하게 작동
-    - **고급 백업 관리**: 백업 파일 목록, 선택적 복원, 자동 정리
+    - **오프라인 작동**: 인터넷 없이도 완벽하게 작동 (환율 업데이트 제외)
     - **실현손익 추적**: 매도 시 실제 손익 자동 계산 및 기록
     - **수수료 관리**: 0.25% 수수료 자동 계산 및 누적 추적
     - **성과 분석**: 월별/주별 수익률, 승률, 거래 통계
     - **스마트 알림**: 목표 달성, 손절선 도달, 수익률/손실률 알림
-    - **히스토리 분석**: 일별 수익률 테이블, 총자산 추이 그래프
     - **모바일 최적화**: 반응형 디자인으로 모든 기기에서 사용 가능
     
-    ### 💾 **데이터 저장 구조**
-    ```
-    📁 data/                    # 기본 데이터 폴더
-    ├── portfolio_data.json     # 메인 포트폴리오 데이터
-    └── daily_history.json      # 일별 히스토리 데이터
-    
-    📁 data_backup/            # 첫 번째 백업 폴더
-    ├── portfolio_data.json    # 백업 복사본
-    └── portfolio_backup_*.json # 타임스탬프 백업들
-    
-    📁 data_backup2/           # 두 번째 백업 폴더
-    └── portfolio_data.json    # 보조 백업 복사본
-    ```
-    
-    ### 🔧 **데이터 복구 시나리오**
-    1. **정상 상황**: 기본 파일에서 로드
-    2. **기본 파일 손상**: 첫 번째 백업에서 자동 복구
-    3. **백업1 손상**: 두 번째 백업에서 자동 복구
-    4. **모든 파일 손상**: 브라우저 세션 백업에서 복구
-    5. **완전 손실**: 타임스탬프 백업 파일에서 수동 복구
-    
-    ### 🛠️ **사용법 및 팁**
-    - **자동 저장**: 매수/매도/현금 변경 시 자동으로 3중 백업 저장
-    - **수동 백업**: 중요한 거래 전에 "수동 백업" 버튼 클릭 권장
-    - **정기 백업**: 엑셀/JSON 다운로드로 로컬 PC에도 백업 보관
-    - **백업 관리**: 오래된 백업은 자동 정리 (최신 7개 유지)
-    - **복구 방법**: 문제 발생 시 백업 파일 목록에서 선택적 복원 가능
-    - **데이터 이전**: JSON 백업 파일로 다른 환경으로 쉽게 이전
-    
-    ### ⚡ **성능 최적화**
-    - **효율적 저장**: JSON 압축으로 파일 크기 최소화
-    - **빠른 로딩**: 데이터 무결성 검사로 안정성 확보
-    - **메모리 관리**: 세션 상태 최적화로 브라우저 부담 최소화
-    - **자동 정리**: 불필요한 백업 파일 자동 삭제
-    
-    ### 🚨 **주의사항**
-    - 브라우저 캐시 삭제 시에도 백업 파일은 보존됩니다
-    - "전체 데이터 초기화"는 신중하게 사용하세요 (백업 생성됨)
-    - 중요한 거래 전에는 엑셀 백업을 PC에 저장하는 것을 권장합니다
-    - 정기적으로 백업 파일 개수를 확인하여 저장 공간을 관리하세요
+    ### 💡 **사용 팁**
+    - **통화 전환**: 언제든지 USD ↔ KRW 전환 가능, 데이터 손실 없음
+    - **환율 업데이트**: 중요한 거래 전에 환율 업데이트 권장
+    - **복사 기능**: ChatGPT에 바로 붙여넣기 가능한 완성된 문장 생성
+    - **백업 관리**: 정기적으로 엑셀/JSON 백업을 PC에 저장 권장
+    - **성능 최적화**: 너무 많은 백업 파일 시 "오래된 백업 정리" 사용
     
     ### 📊 **지원되는 데이터**
-    - ✅ 보유 종목 및 수량
-    - ✅ 매수/매도 거래 내역
-    - ✅ 실현손익 기록
+    - ✅ 보유 종목 및 수량 (통화별 표시)
+    - ✅ 매수/매도 거래 내역 (통화별 변환)
+    - ✅ 실현손익 기록 (통화별 요약)
     - ✅ 종목별 메모
     - ✅ 목표 설정값
-    - ✅ 일별 히스토리
-    - ✅ 수수료 누적액
+    - ✅ 일별 히스토리 (환율 포함)
+    - ✅ 수수료 누적액 (통화별 표시)
     - ✅ 최고/최악 거래 기록
-    - ✅ 현금 보유액
+    - ✅ 현금 보유액 (통화별 입력/표시)
+    - ✅ 환율 정보 및 이력
     
-    이제 구글 드라이브 의존성 없이도 안전하고 신뢰할 수 있는 포트폴리오 관리가 가능합니다! 🎉
+    이제 한국 투자자들도 원화 기준으로 편리하게 포트폴리오를 관리할 수 있습니다! 🇰🇷💰
     """)
 
 # 페이지 하단 상태바
 st.markdown("---")
-st.caption(f"📊 **포트폴리오 트래커 v2.0** | 마지막 업데이트: {get_korean_time() if hasattr(st.session_state, 'last_save_time') else '없음'} | "
+currency_status = f"💱 {st.session_state.currency_mode} 모드 (환율: ₩{st.session_state.exchange_rate:,.0f})"
+st.caption(f"📊 **포트폴리오 트래커 v2.1** | {currency_status} | "
+          f"마지막 업데이트: {get_korean_time() if hasattr(st.session_state, 'last_save_time') else '없음'} | "
           f"💾 자동 저장 활성화 | 🛡️ 3중 백업 보호")
 
 # 실시간 데이터 상태 표시 (사이드바 없이 하단에)
 if st.session_state.stocks:
+    total_value = sum(stock['수량'] * stock['현재가'] for stock in st.session_state.stocks)
+    total_assets = total_value + st.session_state.cash_amount
     st.info(f"💼 현재 {len(st.session_state.stocks)}개 종목 보유 중 | "
-           f"💰 총 자산: ${sum(stock['수량'] * stock['현재가'] for stock in st.session_state.stocks) + st.session_state.cash_amount:,.2f} | "
+           f"💰 총 자산: {format_currency(total_assets, st.session_state.currency_mode, st.session_state.exchange_rate)} | "
            f"📈 총 거래: {len(st.session_state.transactions)}건")
