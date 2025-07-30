@@ -34,7 +34,6 @@ def write_service_account_file():
     with open("data/service_account.json", "w", encoding="utf-8") as f:
         json.dump(credentials_dict, f)
 
-
 st.set_page_config(
     page_title="📊 포트폴리오 트래커", 
     layout="wide",
