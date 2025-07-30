@@ -8,6 +8,12 @@ import io
 import os
 from datetime import date, datetime, timedelta
 import pytz
+from drive_utils import (
+    get_drive_service,
+    get_folder_id,
+    upload_file,
+    download_file
+)
 
 st.set_page_config(
     page_title="📊 포트폴리오 트래커", 
@@ -84,6 +90,14 @@ def save_portfolio_data():
     }
     with open(history_file, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
+        
+    # Google Drive에 업로드
+    try:
+        service = get_drive_service()
+        folder_id = get_folder_id(service, FOLDER_NAME)
+        upload_file(service, folder_id, history_file, "portfolio_data.json")
+    except Exception as e:
+        st.warning(f"⚠️ Google Drive 업로드 실패: {e}")
 
 # 일별 히스토리 저장
 def save_daily_snapshot():
@@ -143,6 +157,24 @@ def record_realized_pnl(symbol, quantity, buy_price, sell_price, commission):
 # 세션 상태 초기화 및 자동 로드
 if "mobile_mode" not in st.session_state:
     st.session_state.mobile_mode = False
+# The code is checking if the key "initialized" is not present in the `st.session_state` dictionary in
+# Streamlit. If the key is not present, it means that some initialization process might not have been
+# done yet.
+
+# Google Drive에서 portfolio_data.json 복원
+if not os.path.exists(history_file):
+    try:
+        service = get_drive_service()
+        folder_id = get_folder_id(service, FOLDER_NAME)
+        downloaded = download_file(service, folder_id, "portfolio_data.json", history_file)
+        if downloaded:
+            st.toast("✅ Google Drive에서 포트폴리오 데이터를 복원했습니다.", icon="📂")
+        else:
+            st.warning("Google Drive에서 portfolio_data.json을 찾지 못했습니다.")
+    except Exception as e:
+        st.warning(f"⚠️ Google Drive 복원 중 오류: {e}")
+
+    
 if "initialized" not in st.session_state:
     # 앱 시작 시 기존 데이터 자동 로드
     (stocks, cash, transactions, target_settings, 
@@ -972,6 +1004,21 @@ else:
                 file_name=f"portfolio_backup_{get_korean_date()}.json",
                 mime="application/json"
             )
+            
+# 🔁 Google Drive 수동 복원            
+with st.expander("🔁 Google Drive 수동 복원"):
+    if st.button("📂 portfolio_data.json 불러오기", use_container_width=True):
+        try:
+            service = get_drive_service()
+            folder_id = get_folder_id(service, FOLDER_NAME)
+            if download_file(service, folder_id, "portfolio_data.json", history_file):
+                st.success("✅ 복원 완료! 새로고침됩니다.")
+                st.rerun()
+            else:
+                st.warning("Google Drive에 portfolio_data.json이 없습니다.")
+        except Exception as e:
+            st.error(f"복원 실패: {e}")
+
 
 # 앱 정보
 st.markdown("---")
