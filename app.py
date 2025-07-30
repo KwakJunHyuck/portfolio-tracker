@@ -86,7 +86,7 @@ def load_portfolio_data():
 def write_service_account_file():
     os.makedirs("data", exist_ok=True)
     with open("data/service_account.json", "w", encoding="utf-8") as f:
-        json.dump(st.secrets["gdrive"], f)
+        json.dump(dict(st.secrets["gdrive"]), f)  # <-- dict()로 변환
 
 # 자동 데이터 저장 함수
 def save_portfolio_data():
