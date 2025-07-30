@@ -1,7 +1,10 @@
 streamlit
-yfinance
 pandas
+yfinance
 plotly
-pyperclip
+pytz
 openpyxl
-streamlit-authenticator
+google-api-python-client
+google-auth
+google-auth-httplib2
+google-auth-oauthlib
