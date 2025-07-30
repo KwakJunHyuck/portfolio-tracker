@@ -21,6 +21,8 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
+write_service_account_file()
+
 # CSS for mobile-friendly design
 st.markdown("""
 <style>
@@ -74,6 +76,11 @@ def load_portfolio_data():
                    data.get("total_commission", 0.0),
                    data.get("best_worst_trades", {"best": None, "worst": None}))
     return [], 0.0, [], {}, [], {}, 0.0, {"best": None, "worst": None}
+
+def write_service_account_file():
+    os.makedirs("data", exist_ok=True)
+    with open("data/service_account.json", "w", encoding="utf-8") as f:
+        json.dump(st.secrets["gdrive"], f)
 
 # 자동 데이터 저장 함수
 def save_portfolio_data():
