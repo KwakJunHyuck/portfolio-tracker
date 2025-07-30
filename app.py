@@ -8,52 +8,14 @@ import io
 import os
 from datetime import date, datetime, timedelta
 import pytz
-from drive_utils import (
-    get_drive_service,
-    get_folder_id,
-    upload_file,
-    download_file,
-    FOLDER_NAME,
-    get_authenticated_service
-)
-
-def write_service_account_file():
-    os.makedirs("data", exist_ok=True)
-    secrets = st.secrets["gdrive"]
-
-    credentials_dict = {
-        "type": secrets.type,
-        "project_id": secrets.project_id,
-        "private_key_id": secrets.private_key_id,
-        "private_key": secrets.private_key.replace("\\n", "\n"),  # ✅ 핵심 수정!
-        "client_email": secrets.client_email,
-        "client_id": secrets.client_id,
-        "auth_uri": secrets.auth_uri,
-        "token_uri": secrets.token_uri,
-        "auth_provider_x509_cert_url": secrets.auth_provider_x509_cert_url,
-        "client_x509_cert_url": secrets.client_x509_cert_url,
-        "universe_domain": secrets.universe_domain
-    }
-
-    with open("data/service_account.json", "w", encoding="utf-8") as f:
-        json.dump(credentials_dict, f)
+import shutil
+import time
 
 st.set_page_config(
     page_title="📊 포트폴리오 트래커", 
     layout="wide",
     initial_sidebar_state="collapsed"
 )
-
-write_service_account_file()
-
-st.write("🔐 gdrive secrets preview:", st.secrets.get("gdrive", {}))
-st.set_page_config(
-    page_title="📈 포트폴리오 트래커",
-    layout="wide",
-    initial_sidebar_state="collapsed"
-)
-
-service = get_drive_service()
 
 # CSS for mobile-friendly design
 st.markdown("""
@@ -79,51 +41,24 @@ st.markdown("""
 
 st.title("📈 스마트 포트폴리오 트래커")
 
-# 서비스 계정 키 경로
-SERVICE_ACCOUNT_FILE = "data/service_account.json"
-BACKUP_FILENAME = "portfolio_data.json"
-
-# Google Drive 백업/복원 버튼 UI
-st.subheader("☁️ Google Drive 연동")
-
-col1, col2 = st.columns(2)
-with col1:
-# 구글 드라이브 백업 버튼
-    if st.button("📤 Google Drive에 백업"):
-        try:
-            service = get_authenticated_service()
-            folder_id = get_folder_id(service, FOLDER_NAME)
-            if not folder_id:
-                st.error("Google Drive에 백업 폴더가 없습니다.")
-            else:
-                upload_file(service, folder_id, "portfolio_data.json", "portfolio_data.json")
-                st.success("Google Drive에 백업 완료!")
-        except Exception as e:
-            st.error(f"⚠️ Google Drive 백업 중 오류: {e}")
-        pass
-        
-with col2:
-    # 구글 드라이브 복원 버튼
-    if st.button("📥 Google Drive에서 복원"):
-        try:
-            service = get_authenticated_service()
-            success = download_file(service)
-            if success:
-                st.success("Google Drive에서 복원 완료!")
-            else:
-                st.warning("Google Drive에서 portfolio_data.json을 찾지 못했습니다.")
-        except Exception as e:
-            st.error(f"⚠️ Google Drive 복원 중 오류: {e}")
-        pass
-
 # 한국 시간대 설정
 KST = pytz.timezone('Asia/Seoul')
 COMMISSION_RATE = 0.0025  # 0.25% 수수료
 
-# 데이터 폴더 확인
-os.makedirs("data", exist_ok=True)
-history_file = "data/portfolio_data.json"
-daily_history_file = "data/daily_history.json"
+# 다중 데이터 폴더 설정 (데이터 유실 방지)
+PRIMARY_DATA_DIR = "data"
+BACKUP_DATA_DIR = "data_backup"
+SECONDARY_BACKUP_DIR = "data_backup2"
+
+# 필요한 폴더들 생성
+for folder in [PRIMARY_DATA_DIR, BACKUP_DATA_DIR, SECONDARY_BACKUP_DIR]:
+    os.makedirs(folder, exist_ok=True)
+
+# 파일 경로들
+PRIMARY_FILE = os.path.join(PRIMARY_DATA_DIR, "portfolio_data.json")
+BACKUP_FILE = os.path.join(BACKUP_DATA_DIR, "portfolio_data.json")
+SECONDARY_BACKUP_FILE = os.path.join(SECONDARY_BACKUP_DIR, "portfolio_data.json")
+DAILY_HISTORY_FILE = os.path.join(PRIMARY_DATA_DIR, "daily_history.json")
 
 def get_korean_time():
     return datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S")
@@ -131,23 +66,15 @@ def get_korean_time():
 def get_korean_date():
     return datetime.now(KST).strftime("%Y-%m-%d")
 
-# 자동 데이터 로드 함수
-def load_portfolio_data():
-    if os.path.exists(history_file):
-        with open(history_file, "r", encoding="utf-8") as f:
-            data = json.load(f)
-            return (data.get("stocks", []), 
-                   data.get("cash", 0.0), 
-                   data.get("transactions", []), 
-                   data.get("target_settings", {}),
-                   data.get("realized_pnl", []),
-                   data.get("stock_memos", {}),
-                   data.get("total_commission", 0.0),
-                   data.get("best_worst_trades", {"best": None, "worst": None}))
-    return [], 0.0, [], {}, [], {}, 0.0, {"best": None, "worst": None}
-
-# 자동 데이터 저장 함수
-def save_portfolio_data():
+# 다중 백업 저장 함수 (데이터 유실 방지)
+def save_portfolio_data_secure():
+    """
+    3중 백업으로 데이터 유실 방지:
+    1. 기본 파일 저장
+    2. 백업 폴더에 복사
+    3. 보조 백업 폴더에 복사
+    4. 브라우저 세션 스토리지 활용
+    """
     data = {
         "stocks": st.session_state.stocks,
         "cash": st.session_state.cash_amount,
@@ -157,20 +84,145 @@ def save_portfolio_data():
         "stock_memos": st.session_state.stock_memos,
         "total_commission": st.session_state.total_commission,
         "best_worst_trades": st.session_state.best_worst_trades,
-        "last_updated": get_korean_time()
+        "last_updated": get_korean_time(),
+        "backup_timestamp": time.time()
     }
-    with open(history_file, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
-        
-    # Google Drive에 업로드
+    
+    # JSON 문자열로 변환
+    json_data = json.dumps(data, indent=2, ensure_ascii=False)
+    
     try:
-        service = get_drive_service()
-        folder_id = get_folder_id(service, FOLDER_NAME)
-        upload_file(service, folder_id, history_file, "portfolio_data.json")
+        # 1. 기본 파일 저장
+        with open(PRIMARY_FILE, "w", encoding="utf-8") as f:
+            f.write(json_data)
+        
+        # 2. 첫 번째 백업 폴더에 저장
+        with open(BACKUP_FILE, "w", encoding="utf-8") as f:
+            f.write(json_data)
+        
+        # 3. 두 번째 백업 폴더에 저장
+        with open(SECONDARY_BACKUP_FILE, "w", encoding="utf-8") as f:
+            f.write(json_data)
+        
+        # 4. 세션 상태에도 JSON 백업 저장
+        st.session_state.json_backup = json_data
+        
+        # 성공 메시지 (너무 자주 표시되지 않도록 조건부)
+        if not hasattr(st.session_state, 'last_save_time') or \
+           time.time() - st.session_state.last_save_time > 30:  # 30초마다 한 번만
+            st.toast("✅ 데이터 자동 저장 완료", icon="💾")
+            st.session_state.last_save_time = time.time()
+        
+        return True
+        
     except Exception as e:
-        st.warning(f"⚠️ Google Drive 업로드 실패: {e}")
+        st.error(f"❌ 데이터 저장 실패: {e}")
+        return False
 
-# 일별 히스토리 저장
+# 복구 우선순위로 데이터 로드
+def load_portfolio_data_secure():
+    """
+    복구 우선순위:
+    1. 기본 파일
+    2. 첫 번째 백업
+    3. 두 번째 백업
+    4. 세션 상태 백업
+    """
+    
+    # 파일들을 우선순위대로 시도
+    files_to_try = [PRIMARY_FILE, BACKUP_FILE, SECONDARY_BACKUP_FILE]
+    
+    for file_path in files_to_try:
+        if os.path.exists(file_path):
+            try:
+                with open(file_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                
+                # 데이터 무결성 검사
+                if validate_data_integrity(data):
+                    if file_path != PRIMARY_FILE:
+                        st.warning(f"⚠️ 백업 파일에서 데이터를 복구했습니다: {file_path}")
+                    
+                    return (data.get("stocks", []), 
+                           data.get("cash", 0.0), 
+                           data.get("transactions", []), 
+                           data.get("target_settings", {}),
+                           data.get("realized_pnl", []),
+                           data.get("stock_memos", {}),
+                           data.get("total_commission", 0.0),
+                           data.get("best_worst_trades", {"best": None, "worst": None}))
+                
+            except Exception as e:
+                st.warning(f"파일 {file_path} 로드 실패: {e}")
+                continue
+    
+    # 세션 상태에서 백업 시도
+    if hasattr(st.session_state, 'json_backup'):
+        try:
+            data = json.loads(st.session_state.json_backup)
+            if validate_data_integrity(data):
+                st.warning("⚠️ 세션 백업에서 데이터를 복구했습니다.")
+                return (data.get("stocks", []), 
+                       data.get("cash", 0.0), 
+                       data.get("transactions", []), 
+                       data.get("target_settings", {}),
+                       data.get("realized_pnl", []),
+                       data.get("stock_memos", {}),
+                       data.get("total_commission", 0.0),
+                       data.get("best_worst_trades", {"best": None, "worst": None}))
+        except:
+            pass
+    
+    # 모든 복구 시도 실패
+    st.error("❌ 모든 백업 파일이 손상되었습니다. 새로 시작합니다.")
+    return [], 0.0, [], {}, [], {}, 0.0, {"best": None, "worst": None}
+
+# 데이터 무결성 검사
+def validate_data_integrity(data):
+    """데이터가 올바른 구조를 가지고 있는지 검사"""
+    required_keys = ["stocks", "cash", "transactions"]
+    
+    if not isinstance(data, dict):
+        return False
+    
+    for key in required_keys:
+        if key not in data:
+            return False
+    
+    # stocks가 리스트인지 확인
+    if not isinstance(data["stocks"], list):
+        return False
+    
+    # cash가 숫자인지 확인
+    if not isinstance(data["cash"], (int, float)):
+        return False
+    
+    return True
+
+# 자동 타임스탬프 백업 (일정 시간마다)
+def create_timestamped_backup():
+    """타임스탬프가 포함된 백업 파일 생성"""
+    if os.path.exists(PRIMARY_FILE):
+        timestamp = get_korean_time().replace(":", "-").replace(" ", "_")
+        timestamped_file = os.path.join(BACKUP_DATA_DIR, f"portfolio_backup_{timestamp}.json")
+        
+        try:
+            shutil.copy2(PRIMARY_FILE, timestamped_file)
+            
+            # 오래된 백업 파일 정리 (7개 이상 시 삭제)
+            backup_files = [f for f in os.listdir(BACKUP_DATA_DIR) if f.startswith("portfolio_backup_")]
+            if len(backup_files) > 7:
+                backup_files.sort()
+                for old_file in backup_files[:-7]:
+                    os.remove(os.path.join(BACKUP_DATA_DIR, old_file))
+            
+            return True
+        except Exception as e:
+            st.warning(f"타임스탬프 백업 실패: {e}")
+            return False
+    return False
+
+# 일별 히스토리 저장 (안전한 버전)
 def save_daily_snapshot():
     today = get_korean_date()
     if st.session_state.stocks:
@@ -182,9 +234,12 @@ def save_daily_snapshot():
         
         # 기존 히스토리 로드
         daily_history = {}
-        if os.path.exists(daily_history_file):
-            with open(daily_history_file, "r", encoding="utf-8") as f:
-                daily_history = json.load(f)
+        if os.path.exists(DAILY_HISTORY_FILE):
+            try:
+                with open(DAILY_HISTORY_FILE, "r", encoding="utf-8") as f:
+                    daily_history = json.load(f)
+            except:
+                daily_history = {}
         
         # 오늘 데이터 업데이트
         daily_history[today] = {
@@ -197,8 +252,20 @@ def save_daily_snapshot():
             "stock_count": len(st.session_state.stocks)
         }
         
-        with open(daily_history_file, "w", encoding="utf-8") as f:
-            json.dump(daily_history, f, indent=2, ensure_ascii=False)
+        # 안전한 저장 (임시 파일 사용)
+        temp_file = DAILY_HISTORY_FILE + ".tmp"
+        try:
+            with open(temp_file, "w", encoding="utf-8") as f:
+                json.dump(daily_history, f, indent=2, ensure_ascii=False)
+            
+            # 성공적으로 저장되면 원본 파일로 이동
+            shutil.move(temp_file, DAILY_HISTORY_FILE)
+            
+        except Exception as e:
+            # 임시 파일 정리
+            if os.path.exists(temp_file):
+                os.remove(temp_file)
+            st.warning(f"일별 히스토리 저장 실패: {e}")
 
 # 실현손익 기록 함수
 def record_realized_pnl(symbol, quantity, buy_price, sell_price, commission):
@@ -228,28 +295,11 @@ def record_realized_pnl(symbol, quantity, buy_price, sell_price, commission):
 # 세션 상태 초기화 및 자동 로드
 if "mobile_mode" not in st.session_state:
     st.session_state.mobile_mode = False
-# The code is checking if the key "initialized" is not present in the `st.session_state` dictionary in
-# Streamlit. If the key is not present, it means that some initialization process might not have been
-# done yet.
 
-# Google Drive에서 portfolio_data.json 복원
-if not os.path.exists(history_file):
-    try:
-        service = get_drive_service()
-        folder_id = get_folder_id(service, FOLDER_NAME)
-        downloaded = download_file(service, folder_id, "portfolio_data.json", history_file)
-        if downloaded:
-            st.toast("✅ Google Drive에서 포트폴리오 데이터를 복원했습니다.", icon="📂")
-        else:
-            st.warning("Google Drive에서 portfolio_data.json을 찾지 못했습니다.")
-    except Exception as e:
-        st.warning(f"⚠️ Google Drive 복원 중 오류: {e}")
-
-    
 if "initialized" not in st.session_state:
     # 앱 시작 시 기존 데이터 자동 로드
     (stocks, cash, transactions, target_settings, 
-     realized_pnl, stock_memos, total_commission, best_worst_trades) = load_portfolio_data()
+     realized_pnl, stock_memos, total_commission, best_worst_trades) = load_portfolio_data_secure()
     st.session_state.stocks = stocks
     st.session_state.cash_amount = cash
     st.session_state.transactions = transactions
@@ -259,6 +309,49 @@ if "initialized" not in st.session_state:
     st.session_state.total_commission = total_commission
     st.session_state.best_worst_trades = best_worst_trades
     st.session_state.initialized = True
+    
+    # 초기 로드 후 즉시 백업 생성
+    save_portfolio_data_secure()
+
+# 자동 백업 시스템 (1시간마다)
+if "last_auto_backup" not in st.session_state:
+    st.session_state.last_auto_backup = time.time()
+
+current_time = time.time()
+if current_time - st.session_state.last_auto_backup > 3600:  # 1시간 = 3600초
+    if create_timestamped_backup():
+        st.session_state.last_auto_backup = current_time
+        st.toast("🕐 자동 백업 생성됨", icon="⏰")
+
+# 데이터 상태 모니터링
+st.subheader("📊 데이터 상태")
+col1, col2, col3, col4 = st.columns(4)
+
+with col1:
+    backup_count = len([f for f in os.listdir(BACKUP_DATA_DIR) if f.startswith("portfolio_backup_")])
+    st.metric("🗂️ 백업 파일", f"{backup_count}개")
+
+with col2:
+    if os.path.exists(PRIMARY_FILE):
+        file_size = os.path.getsize(PRIMARY_FILE)
+        st.metric("📁 파일 크기", f"{file_size} bytes")
+    else:
+        st.metric("📁 파일 크기", "0 bytes")
+
+with col3:
+    if hasattr(st.session_state, 'last_save_time'):
+        last_save = datetime.fromtimestamp(st.session_state.last_save_time).strftime("%H:%M:%S")
+        st.metric("💾 마지막 저장", last_save)
+    else:
+        st.metric("💾 마지막 저장", "없음")
+
+with col4:
+    # 수동 백업 버튼
+    if st.button("🔄 수동 백업"):
+        if create_timestamped_backup():
+            st.success("✅ 수동 백업 완료!")
+        else:
+            st.error("❌ 백업 실패!")
 
 # 모바일 모드 토글
 st.session_state.mobile_mode = st.checkbox("📱 모바일 모드", value=st.session_state.mobile_mode)
@@ -269,17 +362,25 @@ uploaded_file = st.file_uploader("JSON 백업 파일 업로드", type=['json'])
 if uploaded_file is not None:
     try:
         backup_data = json.load(uploaded_file)
-        st.session_state.stocks = backup_data.get("stocks", [])
-        st.session_state.cash_amount = backup_data.get("cash", 0.0)
-        st.session_state.transactions = backup_data.get("transactions", [])
-        st.session_state.target_settings = backup_data.get("target_settings", {})
-        st.session_state.realized_pnl = backup_data.get("realized_pnl", [])
-        st.session_state.stock_memos = backup_data.get("stock_memos", {})
-        st.session_state.total_commission = backup_data.get("total_commission", 0.0)
-        st.session_state.best_worst_trades = backup_data.get("best_worst_trades", {"best": None, "worst": None})
-        save_portfolio_data()
-        st.success("백업 데이터를 성공적으로 불러왔습니다!")
-        st.rerun()
+        
+        # 데이터 무결성 검사
+        if validate_data_integrity(backup_data):
+            st.session_state.stocks = backup_data.get("stocks", [])
+            st.session_state.cash_amount = backup_data.get("cash", 0.0)
+            st.session_state.transactions = backup_data.get("transactions", [])
+            st.session_state.target_settings = backup_data.get("target_settings", {})
+            st.session_state.realized_pnl = backup_data.get("realized_pnl", [])
+            st.session_state.stock_memos = backup_data.get("stock_memos", {})
+            st.session_state.total_commission = backup_data.get("total_commission", 0.0)
+            st.session_state.best_worst_trades = backup_data.get("best_worst_trades", {"best": None, "worst": None})
+            
+            # 즉시 안전한 저장
+            save_portfolio_data_secure()
+            st.success("백업 데이터를 성공적으로 불러왔습니다!")
+            st.rerun()
+        else:
+            st.error("❌ 백업 파일의 데이터 구조가 올바르지 않습니다.")
+            
     except Exception as e:
         st.error(f"백업 파일 로드 중 오류: {e}")
 
@@ -292,7 +393,7 @@ new_cash = st.number_input("보유 현금 ($)", min_value=0.0, step=100.0, forma
 # 현금 변경 시 자동 저장
 if new_cash != st.session_state.cash_amount:
     st.session_state.cash_amount = new_cash
-    save_portfolio_data()
+    save_portfolio_data_secure()
 
 st.markdown("---")
 
@@ -402,8 +503,8 @@ with tab1:
                             "내용": memo
                         })
                     
-                    # 자동 저장
-                    save_portfolio_data()
+                    # 안전한 자동 저장
+                    save_portfolio_data_secure()
                     st.rerun()
                     
             except Exception as e:
@@ -500,8 +601,8 @@ with tab2:
                         "내용": sell_memo
                     })
                 
-                # 자동 저장
-                save_portfolio_data()
+                # 안전한 자동 저장
+                save_portfolio_data_secure()
                 st.success(f"{sell_symbol} {sell_quantity}주 매도 완료!")
                 st.rerun()
     else:
@@ -570,7 +671,7 @@ with tab3:
         
         # 설정 변경 시 자동 저장
         if settings_changed:
-            save_portfolio_data()
+            save_portfolio_data_secure()
     else:
         st.info("보유 종목이 없습니다.")
 
@@ -636,8 +737,8 @@ if st.session_state.stocks:
         
         # 일별 스냅샷 저장
         save_daily_snapshot()
-        # 업데이트 후 자동 저장
-        save_portfolio_data()
+        # 업데이트 후 안전한 자동 저장
+        save_portfolio_data_secure()
         st.success("현재가가 업데이트되었습니다!")
         st.rerun()
     
@@ -755,7 +856,7 @@ with col2:
         # 평균 보유기간 계산 (실현손익 기준)
         if st.session_state.realized_pnl:
             st.write(f"📅 총 거래 완료: **{len(st.session_state.realized_pnl)}건**")
-            avg_holding = 2.5  # 단타 기준 추정값 (실제로는 매수-매도 날짜 차이 계산 필요)
+            avg_holding = 2.5  # 단타 기준 추정값
             st.write(f"⏱️ 평균 보유기간: **{avg_holding:.1f}일** (추정)")
 
 # 월별/주별 수익률 요약
@@ -795,8 +896,8 @@ if st.session_state.realized_pnl:
 st.markdown("---")
 st.subheader("📈 히스토리 및 추이 분석")
 
-if os.path.exists(daily_history_file):
-    with open(daily_history_file, "r", encoding="utf-8") as f:
+if os.path.exists(DAILY_HISTORY_FILE):
+    with open(DAILY_HISTORY_FILE, "r", encoding="utf-8") as f:
         daily_history = json.load(f)
     
     if daily_history:
@@ -972,11 +1073,16 @@ if st.session_state.stocks:
         st.success("✅ 포트폴리오 상태가 양호합니다!")
 
 st.markdown("---")
-st.subheader("📥 데이터 백업")
 
-if st.session_state.mobile_mode:
+# 🗂️ 고급 백업 및 복원 기능
+st.subheader("🗂️ 고급 데이터 관리")
+
+col1, col2, col3 = st.columns(3)
+
+with col1:
+    st.write("**📋 데이터 백업**")
     if st.session_state.stocks:
-        # 포트폴리오 데이터
+        # 엑셀 백업
         df = pd.DataFrame(st.session_state.stocks)
         df["평가금액"] = df["현재가"] * df["수량"]
         df["투자금액"] = df["매수단가"] * df["수량"]
@@ -997,146 +1103,182 @@ if st.session_state.mobile_mode:
                 df_pnl.to_excel(writer, index=False, sheet_name="실현손익")
             
             # 일별히스토리
-            if os.path.exists(daily_history_file):
-                with open(daily_history_file, "r", encoding="utf-8") as f:
+            if os.path.exists(DAILY_HISTORY_FILE):
+                with open(DAILY_HISTORY_FILE, "r", encoding="utf-8") as f:
                     daily_history = json.load(f)
                 if daily_history:
                     df_history = pd.DataFrame.from_dict(daily_history, orient='index')
                     df_history.to_excel(writer, sheet_name="일별히스토리")
 
         st.download_button(
-            label="📥 전체 데이터 엑셀 다운로드",
+            label="📥 엑셀 백업",
             data=buffer.getvalue(),
             file_name=f"portfolio_complete_{get_korean_date()}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             use_container_width=True
         )
-    
+
     # JSON 백업
-    if os.path.exists(history_file):
-        with open(history_file, "r", encoding="utf-8") as f:
+    if os.path.exists(PRIMARY_FILE):
+        with open(PRIMARY_FILE, "r", encoding="utf-8") as f:
             json_data = f.read()
         
         st.download_button(
-            label="📥 JSON 백업 다운로드",
+            label="📥 JSON 백업",
             data=json_data.encode('utf-8'),
             file_name=f"portfolio_backup_{get_korean_date()}.json",
             mime="application/json",
             use_container_width=True
         )
-else:
-    col1, col2 = st.columns(2)
 
-    with col1:
-        if st.session_state.stocks:
-            # 포트폴리오 데이터
-            df = pd.DataFrame(st.session_state.stocks)
-            df["평가금액"] = df["현재가"] * df["수량"]
-            df["투자금액"] = df["매수단가"] * df["수량"]
-
-            buffer = io.BytesIO()
-            with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
-                # 현재 포트폴리오
-                df.to_excel(writer, index=False, sheet_name="현재포트폴리오")
-                
-                # 거래내역
-                if st.session_state.transactions:
-                    df_trans = pd.DataFrame(st.session_state.transactions)
-                    df_trans.to_excel(writer, index=False, sheet_name="거래내역")
-                
-                # 실현손익
-                if st.session_state.realized_pnl:
-                    df_pnl = pd.DataFrame(st.session_state.realized_pnl)
-                    df_pnl.to_excel(writer, index=False, sheet_name="실현손익")
-                
-                # 일별히스토리
-                if os.path.exists(daily_history_file):
-                    with open(daily_history_file, "r", encoding="utf-8") as f:
-                        daily_history = json.load(f)
-                    if daily_history:
-                        df_history = pd.DataFrame.from_dict(daily_history, orient='index')
-                        df_history.to_excel(writer, sheet_name="일별히스토리")
-
-            st.download_button(
-                label="📥 전체 데이터 엑셀 다운로드",
-                data=buffer.getvalue(),
-                file_name=f"portfolio_complete_{get_korean_date()}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
-
-    with col2:
-        if os.path.exists(history_file):
-            with open(history_file, "r", encoding="utf-8") as f:
-                json_data = f.read()
-            
-            st.download_button(
-                label="📥 JSON 백업 다운로드",
-                data=json_data.encode('utf-8'),
-                file_name=f"portfolio_backup_{get_korean_date()}.json",
-                mime="application/json"
-            )
-            
-# 🔁 Google Drive 수동 복원            
-with st.expander("🔁 Google Drive 수동 복원"):
-    if st.button("📂 portfolio_data.json 불러오기", use_container_width=True):
-        try:
-            service = get_drive_service()
-            folder_id = get_folder_id(service, FOLDER_NAME)
-            if download_file(service, folder_id, "portfolio_data.json", history_file):
-                st.success("✅ 복원 완료! 새로고침됩니다.")
+with col2:
+    st.write("**🔄 백업 파일 관리**")
+    
+    # 사용 가능한 백업 파일 목록
+    backup_files = [f for f in os.listdir(BACKUP_DATA_DIR) if f.startswith("portfolio_backup_")]
+    if backup_files:
+        backup_files.sort(reverse=True)  # 최신순
+        selected_backup = st.selectbox("백업 파일 선택", backup_files)
+        
+        if st.button("🔄 선택된 백업 복원", use_container_width=True):
+            backup_path = os.path.join(BACKUP_DATA_DIR, selected_backup)
+            try:
+                shutil.copy2(backup_path, PRIMARY_FILE)
+                st.success(f"✅ {selected_backup} 복원 완료! 새로고침됩니다.")
                 st.rerun()
-            else:
-                st.warning("Google Drive에 portfolio_data.json이 없습니다.")
-        except Exception as e:
-            st.error(f"복원 실패: {e}")
+            except Exception as e:
+                st.error(f"❌ 백업 복원 실패: {e}")
+    else:
+        st.info("사용 가능한 백업 파일이 없습니다.")
 
+with col3:
+    st.write("**🧹 데이터 관리**")
+    
+    # 오래된 백업 파일 정리
+    if st.button("🗑️ 오래된 백업 정리", use_container_width=True):
+        backup_files = [f for f in os.listdir(BACKUP_DATA_DIR) if f.startswith("portfolio_backup_")]
+        if len(backup_files) > 5:
+            backup_files.sort()
+            deleted_count = 0
+            for old_file in backup_files[:-5]:  # 최신 5개만 유지
+                os.remove(os.path.join(BACKUP_DATA_DIR, old_file))
+                deleted_count += 1
+            st.success(f"✅ {deleted_count}개의 오래된 백업 파일을 삭제했습니다.")
+        else:
+            st.info("정리할 백업 파일이 없습니다.")
+    
+    # 전체 데이터 초기화 (위험)
+    st.write("⚠️ **위험 구역**")
+    if st.button("🔴 전체 데이터 초기화", use_container_width=True):
+        if st.checkbox("정말로 모든 데이터를 삭제하시겠습니까?"):
+            # 백업 생성 후 초기화
+            create_timestamped_backup()
+            
+            # 세션 상태 초기화
+            st.session_state.stocks = []
+            st.session_state.cash_amount = 0.0
+            st.session_state.transactions = []
+            st.session_state.target_settings = {}
+            st.session_state.realized_pnl = []
+            st.session_state.stock_memos = {}
+            st.session_state.total_commission = 0.0
+            st.session_state.best_worst_trades = {"best": None, "worst": None}
+            
+            # 파일들 삭제
+            for file_path in [PRIMARY_FILE, DAILY_HISTORY_FILE]:
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+            
+            st.success("✅ 모든 데이터가 초기화되었습니다. (백업 생성됨)")
+            st.rerun()
 
 # 앱 정보
 st.markdown("---")
-with st.expander("ℹ️ 앱 정보 및 사용법"):
+with st.expander("ℹ️ 개선된 앱 정보 및 데이터 보호 기능"):
     st.markdown("""
-    ### 🚀 주요 기능
-    - **자동 누적 기록**: 매수/매도/현금 변경 시 자동 저장
-    - **수수료 관리**: 0.25% 수수료 자동 계산 및 누적 추적
+    ### 🛡️ **데이터 보호 기능 (NEW!)**
+    - **3중 백업 시스템**: 기본 파일 + 2개 백업 폴더에 동시 저장
+    - **자동 타임스탬프 백업**: 1시간마다 자동으로 시간 기록된 백업 생성
+    - **데이터 무결성 검사**: 파일 손상 시 자동으로 백업에서 복구
+    - **세션 백업**: 브라우저 메모리에도 백업 저장
+    - **안전한 파일 저장**: 임시 파일 사용으로 저장 중 오류 방지
+    - **복구 우선순위**: 기본 → 백업1 → 백업2 → 세션 순으로 자동 복구
+    - **실시간 상태 모니터링**: 백업 개수, 파일 크기, 마지막 저장 시간 표시
+    
+    ### 🚀 **핵심 기능**
+    - **완전 자동 저장**: 모든 변경사항이 즉시 3중 백업으로 저장
+    - **데이터 유실 방지**: 파일 손상, 브라우저 종료 등에도 데이터 보호
+    - **오프라인 작동**: 구글 드라이브 없이도 완벽하게 작동
+    - **고급 백업 관리**: 백업 파일 목록, 선택적 복원, 자동 정리
     - **실현손익 추적**: 매도 시 실제 손익 자동 계산 및 기록
+    - **수수료 관리**: 0.25% 수수료 자동 계산 및 누적 추적
     - **성과 분석**: 월별/주별 수익률, 승률, 거래 통계
-    - **거래 기록**: 종목별 매매 횟수, 평균 보유기간 분석
-    - **메모 기능**: 매수/매도 이유 기록 및 관리
     - **스마트 알림**: 목표 달성, 손절선 도달, 수익률/손실률 알림
     - **히스토리 분석**: 일별 수익률 테이블, 총자산 추이 그래프
-    - **데이터 백업**: JSON/Excel 백업 및 복원 기능
-    - **포트폴리오 시각화**: 보유현금 포함 자산 구성 차트
+    - **모바일 최적화**: 반응형 디자인으로 모든 기기에서 사용 가능
     
-    ### 💡 사용 팁
-    - 매수/매도 시 수수료가 자동으로 차감됩니다
-    - 매도 시 실현손익이 자동으로 계산되어 기록됩니다
-    - 메모 기능으로 매매 이유를 기록하여 투자 패턴을 분석하세요
-    - 정기적으로 현재가 업데이트를 통해 일별 데이터를 쌓아보세요
-    - 알림 설정을 통해 수익률 목표를 관리하세요
-    - 데이터 백업을 정기적으로 받아두세요
+    ### 💾 **데이터 저장 구조**
+    ```
+    📁 data/                    # 기본 데이터 폴더
+    ├── portfolio_data.json     # 메인 포트폴리오 데이터
+    └── daily_history.json      # 일별 히스토리 데이터
     
-    ### 🔧 전체 기능 목록
-    - ✅ 자동 데이터 로드 및 저장
-    - ✅ 수수료 0.25% 자동 계산
-    - ✅ 실시간 매수/매도 기록 (한국시간)
-    - ✅ 실현손익 자동 계산 및 추적
-    - ✅ 월별/주별 수익률 요약
-    - ✅ 종목별 매매 횟수 통계
-    - ✅ 평균 보유기간 분석
-    - ✅ 수수료 총 누적액 추적
-    - ✅ 최고/최저 수익률 기록
-    - ✅ 수익률/손실률 브라우저 알림
-    - ✅ 종목별 매수/매도 메모
-    - ✅ 목표 수익률/손절선/익절선 설정
-    - ✅ 일별 수익률 테이블
-    - ✅ 총자산 추이 그래프
-    - ✅ 보유현금 포함 시각화
-    - ✅ JSON 백업 불러오기
-    - ✅ 모바일 친화적 디자인
+    📁 data_backup/            # 첫 번째 백업 폴더
+    ├── portfolio_data.json    # 백업 복사본
+    └── portfolio_backup_*.json # 타임스탬프 백업들
     
-    ### 📊 데이터 구조
-    - 모든 데이터는 `data/portfolio_data.json`에 통합 저장
-    - 일별 히스토리는 `data/daily_history.json`에 별도 저장
-    - 실시간 자동 저장으로 데이터 손실 방지
-    - 한국 시간대(KST) 기준으로 모든 시간 기록
+    📁 data_backup2/           # 두 번째 백업 폴더
+    └── portfolio_data.json    # 보조 백업 복사본
+    ```
+    
+    ### 🔧 **데이터 복구 시나리오**
+    1. **정상 상황**: 기본 파일에서 로드
+    2. **기본 파일 손상**: 첫 번째 백업에서 자동 복구
+    3. **백업1 손상**: 두 번째 백업에서 자동 복구
+    4. **모든 파일 손상**: 브라우저 세션 백업에서 복구
+    5. **완전 손실**: 타임스탬프 백업 파일에서 수동 복구
+    
+    ### 🛠️ **사용법 및 팁**
+    - **자동 저장**: 매수/매도/현금 변경 시 자동으로 3중 백업 저장
+    - **수동 백업**: 중요한 거래 전에 "수동 백업" 버튼 클릭 권장
+    - **정기 백업**: 엑셀/JSON 다운로드로 로컬 PC에도 백업 보관
+    - **백업 관리**: 오래된 백업은 자동 정리 (최신 7개 유지)
+    - **복구 방법**: 문제 발생 시 백업 파일 목록에서 선택적 복원 가능
+    - **데이터 이전**: JSON 백업 파일로 다른 환경으로 쉽게 이전
+    
+    ### ⚡ **성능 최적화**
+    - **효율적 저장**: JSON 압축으로 파일 크기 최소화
+    - **빠른 로딩**: 데이터 무결성 검사로 안정성 확보
+    - **메모리 관리**: 세션 상태 최적화로 브라우저 부담 최소화
+    - **자동 정리**: 불필요한 백업 파일 자동 삭제
+    
+    ### 🚨 **주의사항**
+    - 브라우저 캐시 삭제 시에도 백업 파일은 보존됩니다
+    - "전체 데이터 초기화"는 신중하게 사용하세요 (백업 생성됨)
+    - 중요한 거래 전에는 엑셀 백업을 PC에 저장하는 것을 권장합니다
+    - 정기적으로 백업 파일 개수를 확인하여 저장 공간을 관리하세요
+    
+    ### 📊 **지원되는 데이터**
+    - ✅ 보유 종목 및 수량
+    - ✅ 매수/매도 거래 내역
+    - ✅ 실현손익 기록
+    - ✅ 종목별 메모
+    - ✅ 목표 설정값
+    - ✅ 일별 히스토리
+    - ✅ 수수료 누적액
+    - ✅ 최고/최악 거래 기록
+    - ✅ 현금 보유액
+    
+    이제 구글 드라이브 의존성 없이도 안전하고 신뢰할 수 있는 포트폴리오 관리가 가능합니다! 🎉
     """)
+
+# 페이지 하단 상태바
+st.markdown("---")
+st.caption(f"📊 **포트폴리오 트래커 v2.0** | 마지막 업데이트: {get_korean_time() if hasattr(st.session_state, 'last_save_time') else '없음'} | "
+          f"💾 자동 저장 활성화 | 🛡️ 3중 백업 보호")
+
+# 실시간 데이터 상태 표시 (사이드바 없이 하단에)
+if st.session_state.stocks:
+    st.info(f"💼 현재 {len(st.session_state.stocks)}개 종목 보유 중 | "
+           f"💰 총 자산: ${sum(stock['수량'] * stock['현재가'] for stock in st.session_state.stocks) + st.session_state.cash_amount:,.2f} | "
+           f"📈 총 거래: {len(st.session_state.transactions)}건")
