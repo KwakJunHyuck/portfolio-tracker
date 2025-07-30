@@ -1155,12 +1155,20 @@ else:
 
 st.markdown("---")
 
-# 간단한 복사 버튼 생성 함수
-def create_simple_copy_button(button_text="📋 클립보드에 복사"):
-    """간단한 복사 버튼 HTML 생성"""
+# 텍스트 저장을 위한 전역 변수
+if 'recommendation_text_global' not in st.session_state:
+    st.session_state.recommendation_text_global = ""
+
+# 복사 기능을 위한 HTML과 JavaScript
+def create_copy_button_with_text(text_content, button_text="📋 클립보드에 복사"):
+    """텍스트와 함께 복사 버튼 생성"""
+    # 텍스트를 안전하게 처리 (따옴표, 백틱 등 이스케이프)
+    safe_text = text_content.replace('\\', '\\\\').replace('"', '\\"').replace("'", "\\'").replace('`', '\\`')
+    
     return f"""
-    <div style="margin: 10px 0;">
-        <button style="
+    <div style="margin: 15px 0;">
+        <textarea id="hiddenTextArea" style="position: absolute; left: -9999px; opacity: 0;">{text_content}</textarea>
+        <button id="copyButton" style="
             background: linear-gradient(90deg, #4CAF50, #45a049);
             color: white;
             border: none;
@@ -1171,25 +1179,91 @@ def create_simple_copy_button(button_text="📋 클립보드에 복사"):
             font-weight: bold;
             width: 100%;
             box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-        " onclick="
-            // 텍스트 영역에서 텍스트 가져오기
-            const textArea = document.querySelector('[data-testid=stTextArea] textarea');
-            if (textArea) {{
-                textArea.select();
-                textArea.setSelectionRange(0, 99999);
-                navigator.clipboard.writeText(textArea.value).then(() => {{
-                    alert('✅ 텍스트가 클립보드에 복사되었습니다!');
-                }}).catch(() => {{
-                    try {{
-                        document.execCommand('copy');
-                        alert('✅ 텍스트가 클립보드에 복사되었습니다!');
-                    }} catch (err) {{
-                        alert('❌ 복사에 실패했습니다. Ctrl+A, Ctrl+C로 수동 복사해주세요.');
-                    }}
-                }});
-            }}
-        ">{button_text}</button>
+            transition: all 0.3s ease;
+        " onclick="copyToClipboard()" 
+           onmouseover="this.style.background='linear-gradient(90deg, #45a049, #4CAF50)'; this.style.transform='translateY(-2px)'"
+           onmouseout="this.style.background='linear-gradient(90deg, #4CAF50, #45a049)'; this.style.transform='translateY(0)'"
+        >{button_text}</button>
     </div>
+    
+    <script>
+        function copyToClipboard() {{
+            const text = `{safe_text}`;
+            
+            // 방법 1: Clipboard API 사용
+            if (navigator.clipboard && window.isSecureContext) {{
+                navigator.clipboard.writeText(text).then(() => {{
+                    showCopySuccess();
+                }}).catch(() => {{
+                    fallbackCopy(text);
+                }});
+            }} else {{
+                fallbackCopy(text);
+            }}
+        }}
+        
+        function fallbackCopy(text) {{
+            // 방법 2: 숨겨진 textarea 사용
+            const hiddenTextArea = document.getElementById('hiddenTextArea');
+            if (hiddenTextArea) {{
+                hiddenTextArea.style.position = 'fixed';
+                hiddenTextArea.style.top = '0';
+                hiddenTextArea.style.left = '0';
+                hiddenTextArea.style.width = '1px';
+                hiddenTextArea.style.height = '1px';
+                hiddenTextArea.style.opacity = '0';
+                hiddenTextArea.value = text;
+                hiddenTextArea.focus();
+                hiddenTextArea.select();
+                hiddenTextArea.setSelectionRange(0, 99999);
+                
+                try {{
+                    const successful = document.execCommand('copy');
+                    if (successful) {{
+                        showCopySuccess();
+                    }} else {{
+                        showCopyError();
+                    }}
+                }} catch (err) {{
+                    showCopyError();
+                }}
+                
+                hiddenTextArea.style.position = 'absolute';
+                hiddenTextArea.style.left = '-9999px';
+            }} else {{
+                showCopyError();
+            }}
+        }}
+        
+        function showCopySuccess() {{
+            const button = document.getElementById('copyButton');
+            const originalText = button.innerHTML;
+            button.innerHTML = '✅ 복사 완료!';
+            button.style.background = 'linear-gradient(90deg, #28a745, #20c997)';
+            
+            setTimeout(() => {{
+                button.innerHTML = originalText;
+                button.style.background = 'linear-gradient(90deg, #4CAF50, #45a049)';
+            }}, 2000);
+            
+            // 알림도 표시
+            alert('✅ 텍스트가 클립보드에 복사되었습니다!');
+        }}
+        
+        function showCopyError() {{
+            const button = document.getElementById('copyButton');
+            const originalText = button.innerHTML;
+            button.innerHTML = '❌ 복사 실패';
+            button.style.background = 'linear-gradient(90deg, #dc3545, #c82333)';
+            
+            setTimeout(() => {{
+                button.innerHTML = originalText;
+                button.style.background = 'linear-gradient(90deg, #4CAF50, #45a049)';
+            }}, 2000);
+            
+            alert('❌ 복사에 실패했습니다. 텍스트 영역을 직접 선택해서 Ctrl+C로 복사해주세요.');
+        }}
+    </script>
     """
 
 st.subheader("💡 종목 추천 문장 자동 생성")
@@ -1265,9 +1339,15 @@ if st.button("✍️ 추천 요청 문장 생성"):
             
             st.text_area("📨 복사해서 GPT 추천 요청에 붙여넣기", value=text, height=400, key="recommendation_text")
             
-            # 간단한 복사 버튼 추가
-            copy_button_html = create_simple_copy_button("📋 클립보드에 복사하기")
+            # 세션 상태에 텍스트 저장
+            st.session_state.recommendation_text_global = text
+            
+            # 개선된 복사 버튼 추가
+            copy_button_html = create_copy_button_with_text(text, "📋 클립보드에 복사하기")
             st.markdown(copy_button_html, unsafe_allow_html=True)
+            
+            # 추가 안내 메시지
+            st.info("💡 **복사 방법**: \n1. 위의 초록색 복사 버튼 클릭\n2. 또는 텍스트 영역을 직접 선택한 후 Ctrl+A → Ctrl+C")
             
             # 다운로드 버튼
             st.download_button(
