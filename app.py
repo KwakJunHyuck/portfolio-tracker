@@ -15,6 +15,12 @@ from drive_utils import (
     download_file
 )
 
+def write_service_account_file():
+    os.makedirs("data", exist_ok=True)
+    with open("data/service_account.json", "w", encoding="utf-8") as f:
+        json.dump(st.secrets["gdrive"], f)
+
+
 st.set_page_config(
     page_title="📊 포트폴리오 트래커", 
     layout="wide",
