@@ -1159,15 +1159,16 @@ st.markdown("---")
 if 'recommendation_text_global' not in st.session_state:
     st.session_state.recommendation_text_global = ""
 
-# 복사 기능을 위한 HTML과 JavaScript (중복 표시 방지)
-def create_copy_button_with_text(text_content, button_text="📋 클립보드에 복사"):
-    """텍스트와 함께 복사 버튼 생성 (중복 표시 방지)"""
-    # 텍스트를 안전하게 처리 (따옴표, 백틱 등 이스케이프)
-    safe_text = text_content.replace('\\', '\\\\').replace('"', '\\"').replace("'", "\\'").replace('`', '\\`').replace('\n', '\\n').replace('\r', '\\r')
+# 복사 기능을 위한 간단하고 확실한 방법
+def create_copy_button_simple(text_content, button_text="📋 클립보드에 복사"):
+    """간단하고 확실한 복사 버튼"""
+    # 특수문자를 안전하게 처리
+    import json
+    safe_text = json.dumps(text_content)
     
     return f"""
     <div style="margin: 15px 0;">
-        <button id="copyButton" style="
+        <button onclick="copyText()" style="
             background: linear-gradient(90deg, #4CAF50, #45a049);
             color: white;
             border: none;
@@ -1179,89 +1180,57 @@ def create_copy_button_with_text(text_content, button_text="📋 클립보드에
             width: 100%;
             box-shadow: 0 2px 5px rgba(0,0,0,0.2);
             transition: all 0.3s ease;
-        " onclick="copyToClipboard()" 
-           onmouseover="this.style.background='linear-gradient(90deg, #45a049, #4CAF50)'; this.style.transform='translateY(-2px)'"
-           onmouseout="this.style.background='linear-gradient(90deg, #4CAF50, #45a049)'; this.style.transform='translateY(0)'"
+        " onmouseover="this.style.background='linear-gradient(90deg, #45a049, #4CAF50)'" 
+           onmouseout="this.style.background='linear-gradient(90deg, #4CAF50, #45a049)'"
         >{button_text}</button>
     </div>
     
     <script>
-        function copyToClipboard() {{
-            const text = "{safe_text}";
+        function copyText() {{
+            const textToCopy = {safe_text};
             
-            // 방법 1: Clipboard API 사용
-            if (navigator.clipboard && window.isSecureContext) {{
-                navigator.clipboard.writeText(text).then(() => {{
-                    showCopySuccess();
-                }}).catch(() => {{
-                    fallbackCopy(text);
+            // 방법 1: 최신 브라우저 Clipboard API
+            if (navigator.clipboard) {{
+                navigator.clipboard.writeText(textToCopy).then(function() {{
+                    showSuccess();
+                }}).catch(function() {{
+                    useOldMethod(textToCopy);
                 }});
             }} else {{
-                fallbackCopy(text);
+                useOldMethod(textToCopy);
             }}
         }}
         
-        function fallbackCopy(text) {{
-            // 방법 2: 임시 textarea 생성하여 복사
-            const textArea = document.createElement('textarea');
-            textArea.value = text;
-            textArea.style.position = 'fixed';
-            textArea.style.left = '-999999px';
-            textArea.style.top = '-999999px';
-            textArea.style.opacity = '0';
-            textArea.style.pointerEvents = 'none';
-            textArea.style.zIndex = '-1';
-            
-            document.body.appendChild(textArea);
-            textArea.focus();
-            textArea.select();
-            textArea.setSelectionRange(0, textArea.value.length);
+        function useOldMethod(text) {{
+            // 방법 2: 구형 브라우저 호환 방법
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            textarea.style.position = 'fixed';
+            textarea.style.left = '-9999px';
+            textarea.style.top = '-9999px';
+            document.body.appendChild(textarea);
+            textarea.select();
             
             try {{
-                const successful = document.execCommand('copy');
-                if (successful) {{
-                    showCopySuccess();
+                const result = document.execCommand('copy');
+                if (result) {{
+                    showSuccess();
                 }} else {{
-                    showCopyError();
+                    showError();
                 }}
             }} catch (err) {{
-                showCopyError();
+                showError();
             }} finally {{
-                document.body.removeChild(textArea);
+                document.body.removeChild(textarea);
             }}
         }}
         
-        function showCopySuccess() {{
-            const button = document.getElementById('copyButton');
-            if (button) {{
-                const originalText = button.innerHTML;
-                button.innerHTML = '✅ 복사 완료!';
-                button.style.background = 'linear-gradient(90deg, #28a745, #20c997)';
-                
-                setTimeout(() => {{
-                    button.innerHTML = originalText;
-                    button.style.background = 'linear-gradient(90deg, #4CAF50, #45a049)';
-                }}, 2000);
-            }}
-            
-            // 알림도 표시
-            alert('✅ 텍스트가 클립보드에 복사되었습니다!');
+        function showSuccess() {{
+            alert('✅ 텍스트가 클립보드에 복사되었습니다!\\n\\nChatGPT에 Ctrl+V로 바로 붙여넣으세요!');
         }}
         
-        function showCopyError() {{
-            const button = document.getElementById('copyButton');
-            if (button) {{
-                const originalText = button.innerHTML;
-                button.innerHTML = '❌ 복사 실패';
-                button.style.background = 'linear-gradient(90deg, #dc3545, #c82333)';
-                
-                setTimeout(() => {{
-                    button.innerHTML = originalText;
-                    button.style.background = 'linear-gradient(90deg, #4CAF50, #45a049)';
-                }}, 2000);
-            }}
-            
-            alert('❌ 복사에 실패했습니다. 텍스트 영역을 직접 선택해서 Ctrl+C로 복사해주세요.');
+        function showError() {{
+            alert('❌ 자동 복사에 실패했습니다.\\n\\n수동으로 복사해주세요:\\n1. 위의 텍스트 영역을 클릭\\n2. Ctrl+A (전체선택)\\n3. Ctrl+C (복사)');
         }}
     </script>
     """
@@ -1278,36 +1247,7 @@ if st.button("✍️ 추천 요청 문장 생성"):
             currency_text = "원화" if st.session_state.currency_mode == "KRW" else "달러"
             currency_symbol = get_currency_symbol(st.session_state.currency_mode)
             
-            text = f"""아래는 오늘 기준 내 미국 주식 포트폴리오 전체 구성이다:
-* 보유 현금: {format_currency(st.session_state.cash_amount, st.session_state.currency_mode, st.session_state.exchange_rate)}
-* 누적 수수료: {format_currency(st.session_state.total_commission, st.session_state.currency_mode, st.session_state.exchange_rate)}
-"""
-            
-            for stock in holdings:
-                if st.session_state.currency_mode == "KRW":
-                    buy_price_display = f"₩{stock['매수단가'] * st.session_state.exchange_rate:,.0f}"
-                    current_price_display = f"₩{stock['현재가'] * st.session_state.exchange_rate:,.0f}"
-                else:
-                    buy_price_display = f"${stock['매수단가']}"
-                    current_price_display = f"${stock['현재가']}"
-                
-                text += f"* {stock['종목']}: {stock['수량']}주 (매수단가 {buy_price_display}, 현재가 {current_price_display}, 수익률 {stock['수익률(%)']:.2f}%)\n"
-            
-            # 성과 요약 추가
-            if st.session_state.realized_pnl:
-                df_pnl = pd.DataFrame(st.session_state.realized_pnl)
-                total_realized = df_pnl["실현손익"].sum()
-                win_trades = len(df_pnl[df_pnl["실현손익"] > 0])
-                total_trades = len(df_pnl)
-                win_rate = (win_trades / total_trades * 100) if total_trades > 0 else 0
-                
-                text += f"""
-* 총 실현손익: {format_currency(total_realized, st.session_state.currency_mode, st.session_state.exchange_rate)}
-* 승률: {win_rate:.1f}% ({win_trades}/{total_trades})
-* 총 거래 완료: {total_trades}건
-"""
-            
-            text += f"""
+            text = f"""
 
 📌 이 포트폴리오를 바탕으로 아래 전략을 도출해줘:
 
@@ -1335,6 +1275,7 @@ if st.button("✍️ 추천 요청 문장 생성"):
 
 5. **수수료 0.25%를 고려한 실질 매매 전략**을 포함해줘
 
+📌 답변은 {currency_text} 기준으로 해줘 (현재 환율: 1 USD = ₩{st.session_state.exchange_rate:,.0f}).
             """.strip()
             
             st.text_area("📨 복사해서 GPT 추천 요청에 붙여넣기", value=text, height=400, key="recommendation_text")
@@ -1343,7 +1284,7 @@ if st.button("✍️ 추천 요청 문장 생성"):
             st.session_state.recommendation_text_global = text
             
             # 개선된 복사 버튼 추가
-            copy_button_html = create_copy_button_with_text(text, "📋 클립보드에 복사하기")
+            copy_button_html = create_copy_button_simple(text, "📋 클립보드에 복사하기")
             st.markdown(copy_button_html, unsafe_allow_html=True)
             
             # 추가 안내 메시지
